@@ -2,6 +2,13 @@
 
 This repo is used for [a tutorial at Medium](https://medium.com/ibm-cloud/diving-into-kubernetes-mutatingadmissionwebhook-6ef3c5695f74) to create a Kubernetes [MutatingAdmissionWebhook](https://kubernetes.io/docs/admin/admission-controllers/#mutatingadmissionwebhook-beta-in-19) that injects a nginx sidecar container into pod prior to persistence of the object.
 
+## Forked for Work
+Specifically for use with Filers. I am hoping that I can just use this and then change up a few things (as in loop and get secrets)
+
+### Modifications Made
+`configmap.yaml` to match a generic template for the filer sidecar.
+
+
 ## Prerequisites
 
 - [git](https://git-scm.com/downloads)

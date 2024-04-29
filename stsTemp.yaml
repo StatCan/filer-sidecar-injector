@@ -1,0 +1,128 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: testing-filers-multi-attempt
+  namespace: jose-matsuda1
+spec:
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  podManagementPolicy: OrderedReady
+  replicas: 1
+  selector:
+    matchLabels:
+      statefulset: testing-filers-multi-attempt
+  serviceName: ""
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        #data.statcan.gc.ca/inject-blob-volumes: "true"
+        notebook-name: testing-filers-multi-attempt
+        statefulset: testing-filers-multi-attempt
+    spec:
+      containers:
+      - name: starter
+        image: artifactory.cloud.statcan.ca/das-aaw-docker/mfcp-proxy-goofys-multi-inc:5gb
+        imagePullPolicy: Always
+        #command: ["sleep"]
+        #args: ["infinity"]
+        command: ["/bin/bash"]
+        args: ["-c", "/goofys --cheap --endpoint https://fld9.s3.cloud.statcan.ca  --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f s3bucket/ /tmp; echo 'hello world'"]
+        env:
+        - name: FUSERMOUNT3PROXY_FDPASSING_SOCKPATH
+          value: "/fusermount3-proxy/fuse-csi-ephemeral.sock"
+        - name: AWS_ACCESS_KEY_ID
+          value: 
+        - name: AWS_SECRET_ACCESS_KEY
+          value: 
+        volumeMounts:
+        - name: fuse-fd-passing
+          mountPath: /fusermount3-proxy
+      ## ATTEMPT A MULTI MOUNT
+      - name: starter-2
+        image: artifactory.cloud.statcan.ca/das-aaw-docker/mfcp-proxy-goofys-multi-inc:5gb
+        imagePullPolicy: Always
+        #command: ["sleep"]
+        #args: ["infinity"]
+        command: ["/bin/bash"]
+        args: ["-c", "/goofys --cheap --endpoint https://fld9.s3.cloud.statcan.ca  --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f s3pat/ /tmp; echo 'hello world'"]
+        env:
+        - name: FUSERMOUNT3PROXY_FDPASSING_SOCKPATH
+          value: "/fusermount3-proxy-2/fuse-csi-ephemeral.sock"
+        - name: AWS_ACCESS_KEY_ID
+          value: 
+        - name: AWS_SECRET_ACCESS_KEY
+          value: 
+        volumeMounts:
+        - name: fuse-fd-passing-2
+          mountPath: /fusermount3-proxy-2
+      ## End MultiMount
+      - env: # new container, ours
+        - name: KF_LANG
+          value: en
+        - name: NB_PREFIX
+          value: /notebook/jose-matsuda1/testing-filers
+        image: artifactory.cloud.statcan.ca/das-aaw-docker/jupyterlab-cpu:v2
+        imagePullPolicy: Always
+        name: testing-filers
+        volumeMounts:
+        - name: fuse-csi-ephemeral
+          mountPath: /home/jovyan/filers
+          readOnly: false
+          mountPropagation: HostToContainer
+        ## add this for multi mount 
+        - name: fuse-csi-ephemeral-2
+          mountPath: /home/jovyan/filers2
+          readOnly: false
+          mountPropagation: HostToContainer 
+        ## end add this for multimount
+        ports:
+        - containerPort: 8888
+          name: notebook-port
+          protocol: TCP
+        resources:
+          limits:
+            cpu: "4"
+            memory: 4Gi
+          requests:
+            cpu: 500m
+            memory: 2Gi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        workingDir: /home/jovyan
+      dnsPolicy: ClusterFirst
+      volumes:
+      - name: fuse-fd-passing
+        emptyDir: {}
+      ## Again for multi
+      - name: fuse-fd-passing-2
+        emptyDir: {}
+      ## again for multi
+      - name: fuse-csi-ephemeral
+        csi:
+          driver: meta-fuse-csi-plugin.csi.storage.pfn.io
+          readOnly: false
+          volumeAttributes:
+            fdPassingEmptyDirName: fuse-fd-passing
+            fdPassingSocketName: fuse-csi-ephemeral.sock
+      ## again for multi
+      - name: fuse-csi-ephemeral-2
+        csi:
+          driver: meta-fuse-csi-plugin.csi.storage.pfn.io
+          readOnly: false
+          volumeAttributes:
+            fdPassingEmptyDirName: fuse-fd-passing-2
+            # should probably stay as fuse-csi-ephemeral
+            fdPassingSocketName: fuse-csi-ephemeral.sock
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 100
+      serviceAccount: default-editor
+      serviceAccountName: default-editor
+      terminationGracePeriodSeconds: 30
+  updateStrategy:
+    rollingUpdate:
+      partition: 0
+    type: RollingUpdate
