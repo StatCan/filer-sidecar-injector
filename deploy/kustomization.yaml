@@ -7,7 +7,6 @@ resources:
 - service.yaml
 - serviceaccount.yaml
 - configmap.yaml
-- nginx-configmap.yaml
 
 images:
 - name: filer-sidecar-injector

@@ -6,6 +6,7 @@ kind: ConfigMap
 #   filer-connection-x, fuse-fd-passing-x and fuse-csi-ephemeral-x
 metadata:
   name: filer-sidecar-injector
+  namespace: netapp
   labels:
     app: filer-sidecar-injector
 data:
@@ -28,7 +29,7 @@ data:
         mountPath: /fusermount3-proxy
     volumes:
     - name: fuse-fd-passing-x
-        emptyDir: {}
+      emptyDir: {}
     - name: fuse-csi-ephemeral-x
         csi:
           driver: meta-fuse-csi-plugin.csi.storage.pfn.io

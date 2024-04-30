@@ -18,7 +18,7 @@ spec:
       serviceAccountName: filer-sidecar-injector
       containers:
         - name: filer-sidecar-injector
-          image: filer-sidecar-injector
+          image: artifactory.cloud.statcan.ca/das-aaw-docker/filer-sidecar:latest
           imagePullPolicy: Always
           args:
           - -service-name=filer-sidecar-injector
