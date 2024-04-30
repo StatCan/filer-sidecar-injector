@@ -5,9 +5,9 @@ kind: ConfigMap
 # Must swap out the following; INSERT-ENDPOINT, INSERT-BUCKET, INSERT-ACCESS, INSERT-SECRET, 
 #   filer-connection-x, fuse-fd-passing-x and fuse-csi-ephemeral-x
 metadata:
-  name: sidecar-injector
+  name: filer-sidecar-injector
   labels:
-    app: sidecar-injector
+    app: filer-sidecar-injector
 data:
   sidecarconfig.yaml: |
     containers:
@@ -15,14 +15,14 @@ data:
       image: artifactory.cloud.statcan.ca/das-aaw-docker/mfcp-proxy-goofys-multi-inc:5gb
       imagePullPolicy: IfNotPresent
       command: ["/bin/bash"]
-        args: ["-c", "/goofys --cheap --endpoint INSERT-ENDPOINT  --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f INSERT-BUCKET/ /tmp]
-        env:
-        - name: FUSERMOUNT3PROXY_FDPASSING_SOCKPATH
-          value: "/fusermount3-proxy/fuse-csi-ephemeral.sock"
-        - name: AWS_ACCESS_KEY_ID
-          value: INSERT-ACCESS
-        - name: AWS_SECRET_ACCESS_KEY
-          value: INSERT-SECRET
+      args: ["-c", "/goofys --cheap --endpoint INSERT-ENDPOINT  --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f INSERT-BUCKET/ /tmp"]
+      env:
+      - name: FUSERMOUNT3PROXY_FDPASSING_SOCKPATH
+        value: "/fusermount3-proxy/fuse-csi-ephemeral.sock"
+      - name: AWS_ACCESS_KEY_ID
+        value: INSERT-ACCESS
+      - name: AWS_SECRET_ACCESS_KEY
+        value: INSERT-SECRET
       volumeMounts:
       - name: fuse-fd-passing-x
         mountPath: /fusermount3-proxy

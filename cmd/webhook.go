@@ -25,11 +25,6 @@ var (
 	deserializer  = codecs.UniversalDeserializer()
 )
 
-var ignoredNamespaces = []string{
-	metav1.NamespaceSystem,
-	metav1.NamespacePublic,
-}
-
 const (
 	admissionWebhookAnnotationInjectKey = "filer-injector-webhook/inject"
 	admissionWebhookAnnotationStatusKey = "filer-injector-webhook/status"
@@ -76,14 +71,7 @@ func loadConfig(configFile string) (*Config, error) {
 
 // Check whether the target resoured need to be mutated
 func mutationRequired(metadata *metav1.ObjectMeta) bool {
-	// skip special kubernete system namespaces
-	// should instead check on metadata for the label "notebook-name" if that exists then do it
-	/*for _, namespace := range ignoredList {
-		if metadata.Namespace == namespace {
-			infoLogger.Printf("Skip mutation for %v for it's in special namespace:%v", metadata.Name, metadata.Namespace)
-			return false
-		}
-	}*/
+	// Initially check for labels
 	if _, ok := metadata.Labels["notebook-name"]; !ok {
 		infoLogger.Printf("Skip mutation since not a notebook pod")
 		return false
@@ -193,10 +181,13 @@ func createPatch(pod *corev1.Pod, sidecarConfig *Config, annotations map[string]
 	}
 	secretList, _ := clientset.CoreV1().Secrets(pod.Namespace).List(context.Background(), metav1.ListOptions{})
 
-	// Surely the loop goes here...
+	// TBD if this loop functions how I want it to.
 	for sec := range secretList.Items {
 		// "Modify" the retrieved sidecarConfig, must verify the keys
 		sidecarConfig.Containers[0].Name = string(secretList.Items[sec].Data["filer"])
+		sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_ENDPOINT"]) +
+			"--http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
+			string(secretList.Items[sec].Data["S3_BUCKET"]) + "/ /tmp"}
 		sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["ACCESS_KEY"])
 		sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["SECRET_KEY"])
 		sidecarConfig.Containers[0].VolumeMounts[0].Name = ("fuse-fd-passing-" + string(sec))
@@ -228,7 +219,6 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview) *admissionv1
 		req.Kind, req.Namespace, req.Name, pod.Name, req.UID, req.Operation, req.UserInfo)
 
 	// determine whether to perform mutation
-	// if
 	if !mutationRequired(&pod.ObjectMeta) {
 		infoLogger.Printf("Skipping mutation for %s/%s due to policy check", pod.Namespace, pod.Name)
 		return &admissionv1.AdmissionResponse{

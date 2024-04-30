@@ -1,7 +1,6 @@
-namespace: sidecar-injector
+namespace: netapp
 
 resources:
-- namespace.yaml
 - clusterrole.yaml
 - clusterrolebinding.yaml
 - deployment.yaml
@@ -11,8 +10,9 @@ resources:
 - nginx-configmap.yaml
 
 images:
-- name: sidecar-injector
-  newName: quay.io/morvencao/sidecar-injector
+- name: filer-sidecar-injector
+# must update this anways
+  newName: quay.io/morvencao/filer-sidecar-injector
   newTag: latest
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

@@ -1,26 +1,26 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sidecar-injector
+  name: filer-sidecar-injector
   labels:
-    app: sidecar-injector
+    app: filer-sidecar-injector
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: sidecar-injector
+      app: filer-sidecar-injector
   template:
     metadata:
       labels:
-        app: sidecar-injector
+        app: filer-sidecar-injector
     spec:
-      serviceAccountName: sidecar-injector
+      serviceAccountName: filer-sidecar-injector
       containers:
-        - name: sidecar-injector
-          image: sidecar-injector
+        - name: filer-sidecar-injector
+          image: filer-sidecar-injector
           imagePullPolicy: Always
           args:
-          - -service-name=sidecar-injector
+          - -service-name=filer-sidecar-injector
           - -sidecar-config-file=/etc/webhook/config/sidecarconfig.yaml
           env:
           - name: POD_NAMESPACE
@@ -37,4 +37,4 @@ spec:
       volumes:
       - name: webhook-config
         configMap:
-          name: sidecar-injector
+          name: filer-sidecar-injector
