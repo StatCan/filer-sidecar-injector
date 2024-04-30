@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: filer-sidecar-injector
+  namespace: netapp
   labels:
     app: filer-sidecar-injector
 spec:
