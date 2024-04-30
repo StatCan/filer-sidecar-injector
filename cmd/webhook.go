@@ -184,12 +184,12 @@ func createPatch(pod *corev1.Pod, sidecarConfig *Config, annotations map[string]
 	// TBD if this loop functions how I want it to.
 	for sec := range secretList.Items {
 		// "Modify" the retrieved sidecarConfig, must verify the keys
-		sidecarConfig.Containers[0].Name = string(secretList.Items[sec].Data["filer"])
-		sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_ENDPOINT"]) +
+		sidecarConfig.Containers[0].Name = string(secretList.Items[sec].Data["S3_BUCKET"]) + "-bucket-containers"
+		sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
 			"--http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
 			string(secretList.Items[sec].Data["S3_BUCKET"]) + "/ /tmp"}
-		sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["ACCESS_KEY"])
-		sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["SECRET_KEY"])
+		sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["S3_ACCESS"])
+		sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["S3_SECRET"])
 		sidecarConfig.Containers[0].VolumeMounts[0].Name = ("fuse-fd-passing-" + string(sec))
 		sidecarConfig.Volumes[0].Name = ("fuse-fd-passing-" + string(sec))
 		sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + string(sec))
