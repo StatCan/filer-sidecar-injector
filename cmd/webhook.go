@@ -31,8 +31,8 @@ var ignoredNamespaces = []string{
 }
 
 const (
-	admissionWebhookAnnotationInjectKey = "sidecar-injector-webhook.morven.me/inject"
-	admissionWebhookAnnotationStatusKey = "sidecar-injector-webhook.morven.me/status"
+	admissionWebhookAnnotationInjectKey = "filer-injector-webhook/inject"
+	admissionWebhookAnnotationStatusKey = "filer-injector-webhook/status"
 )
 
 type WebhookServer struct {
@@ -75,13 +75,18 @@ func loadConfig(configFile string) (*Config, error) {
 }
 
 // Check whether the target resoured need to be mutated
-func mutationRequired(ignoredList []string, metadata *metav1.ObjectMeta) bool {
+func mutationRequired(metadata *metav1.ObjectMeta) bool {
 	// skip special kubernete system namespaces
-	for _, namespace := range ignoredList {
+	// should instead check on metadata for the label "notebook-name" if that exists then do it
+	/*for _, namespace := range ignoredList {
 		if metadata.Namespace == namespace {
 			infoLogger.Printf("Skip mutation for %v for it's in special namespace:%v", metadata.Name, metadata.Namespace)
 			return false
 		}
+	}*/
+	if _, ok := metadata.Labels["notebook-name"]; !ok {
+		infoLogger.Printf("Skip mutation since not a notebook pod")
+		return false
 	}
 
 	annotations := metadata.GetAnnotations()
@@ -186,12 +191,18 @@ func createPatch(pod *corev1.Pod, sidecarConfig *Config, annotations map[string]
 	if err != nil {
 		panic(err.Error())
 	}
-	secretList, err := clientset.CoreV1().Secrets(pod.Namespace).List(context.Background(), metav1.ListOptions{})
+	secretList, _ := clientset.CoreV1().Secrets(pod.Namespace).List(context.Background(), metav1.ListOptions{})
 
 	// Surely the loop goes here...
 	for sec := range secretList.Items {
-		// "Modify" the retrieved sidecarConfig.
-		sidecarConfig.Containers[0].Name = string(secretList.Items[sec].Data["asd"])
+		// "Modify" the retrieved sidecarConfig, must verify the keys
+		sidecarConfig.Containers[0].Name = string(secretList.Items[sec].Data["filer"])
+		sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["ACCESS_KEY"])
+		sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["SECRET_KEY"])
+		sidecarConfig.Containers[0].VolumeMounts[0].Name = ("fuse-fd-passing-" + string(sec))
+		sidecarConfig.Volumes[0].Name = ("fuse-fd-passing-" + string(sec))
+		sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + string(sec))
+		sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = ("fuse-fd-passing-" + string(sec))
 		patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
 		patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 		patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
@@ -217,7 +228,8 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview) *admissionv1
 		req.Kind, req.Namespace, req.Name, pod.Name, req.UID, req.Operation, req.UserInfo)
 
 	// determine whether to perform mutation
-	if !mutationRequired(ignoredNamespaces, &pod.ObjectMeta) {
+	// if
+	if !mutationRequired(&pod.ObjectMeta) {
 		infoLogger.Printf("Skipping mutation for %s/%s due to policy check", pod.Namespace, pod.Name)
 		return &admissionv1.AdmissionResponse{
 			Allowed: true,
