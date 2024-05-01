@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: goofys-debug-multi-inc
+  namespace: jose-matsuda
+  annotations:
+    sidecar-injector-webhook.das-zone.statcan/inject: "yes"
+  labels:
+    notebook-name: lmao
+spec:
+  containers:
+  - image: artifactory.cloud.statcan.ca/das-aaw-docker/jupyterlab-cpu:v2 
+    imagePullPolicy: Always
+    name: ourimage
+    command: ["sleep"]
+    args: ["infinity"]
+    #command: ["/bin/sh","-c"]
+    #args: ["ls /home/jovyan/filers; echo 'Started'; sleep 60; ls /home/jovyan/filers;  echo 'slept 65 and echod'; sleep 20; ls /home/jovyan/filers; echo 'ending'; sleep infinity"]
+    
+    # This `volumeMounts` must be added by the MWC
+    #volumeMounts:
+    #- name: fuse-csi-ephemeral
+    #  mountPath: /home/jovyan/filers
+    #  readOnly: false 
+    #  mountPropagation: HostToContainer # TODO: need to validate in csi driver?
