@@ -169,6 +169,27 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 	return patch
 }
 
+// This will always ADD a volumeMount to the user container spec
+// Index is used to name the `fuse-csi-ephemeral`
+func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, index int, bucketName string) (patch []patchOperation) {
+	for key := range targetContainerSpec {
+		// This is a big assumption on /home/jovyan
+		if targetContainerSpec[key].WorkingDir == "/home/jovyan" {
+			// targetContainerSpec = map[string]string{}
+			// With an `add` operation the index doesnt matter
+			patch = append(patch, patchOperation{
+				Op:   "add",
+				Path: "/spec/containers/volumeMounts/1",
+				Value: map[string]string{
+					"name": "fuse-csi-ephemeral-" + string(index), "mountPath": "/home/jovyan/" + bucketName,
+					"readOnly": "false", "mountPropagation": "HostToContainer",
+				},
+			})
+		}
+	}
+	return patch
+}
+
 // create mutation patch for resoures
 func createPatch(pod *corev1.Pod, sidecarConfig *Config, annotations map[string]string) ([]byte, error) {
 	var patch []patchOperation
@@ -187,21 +208,26 @@ func createPatch(pod *corev1.Pod, sidecarConfig *Config, annotations map[string]
 
 	// TBD if this loop functions how I want it to.
 	for sec := range secretList.Items {
-		// "Modify" the retrieved sidecarConfig, must verify the keys
-		sidecarConfig.Containers[0].Name = string(secretList.Items[sec].Data["S3_BUCKET"]) + "-bucket-containers"
-		sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
-			"--http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
-			string(secretList.Items[sec].Data["S3_BUCKET"]) + "/ /tmp"}
-		sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["S3_ACCESS"])
-		sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["S3_SECRET"])
-		sidecarConfig.Containers[0].VolumeMounts[0].Name = ("fuse-fd-passing-" + string(sec))
-		sidecarConfig.Volumes[0].Name = ("fuse-fd-passing-" + string(sec))
-		sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + string(sec))
-		sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = ("fuse-fd-passing-" + string(sec))
-		patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
-		patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
-		patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
-
+		// check for secrets having filer-conn-secret
+		if strings.Contains(secretList.Items[sec].Name, "filer-conn-secret") {
+			infoLogger.Printf(("Found a secret to use"))
+			// "Modify" the retrieved sidecarConfig, must verify the keys
+			bucketName := string(secretList.Items[sec].Data["S3_BUCKET"])
+			sidecarConfig.Containers[0].Name = bucketName + "-bucket-containers"
+			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
+				"--http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
+				string(secretList.Items[sec].Data["S3_BUCKET"]) + "/ /tmp"}
+			sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["S3_ACCESS"])
+			sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["S3_SECRET"])
+			sidecarConfig.Containers[0].VolumeMounts[0].Name = ("fuse-fd-passing-" + string(sec))
+			sidecarConfig.Volumes[0].Name = ("fuse-fd-passing-" + string(sec))
+			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + string(sec))
+			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = ("fuse-fd-passing-" + string(sec))
+			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
+			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
+			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
+			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, sec, bucketName)...)
+		}
 	} // Surely here is where we end the loop
 	return json.Marshal(patch)
 }
