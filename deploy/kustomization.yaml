@@ -1,4 +1,4 @@
-namespace: netapp
+namespace: das
 
 resources:
 - clusterrole.yaml

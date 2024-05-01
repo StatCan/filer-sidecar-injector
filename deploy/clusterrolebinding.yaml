@@ -11,4 +11,4 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: filer-sidecar-injector
-  namespace: netapp
+  namespace: das

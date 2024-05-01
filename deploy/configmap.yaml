@@ -6,7 +6,7 @@ kind: ConfigMap
 #   filer-connection-x, fuse-fd-passing-x and fuse-csi-ephemeral-x
 metadata:
   name: filer-sidecar-injector
-  namespace: netapp
+  namespace: das
   labels:
     app: filer-sidecar-injector
 data:

@@ -2,7 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: filer-sidecar-injector
-  namespace: netapp
+  # Must be in a ns without istio
+  namespace: das
   labels:
     app: filer-sidecar-injector
 spec:
