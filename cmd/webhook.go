@@ -26,8 +26,8 @@ var (
 )
 
 const (
-	admissionWebhookAnnotationInjectKey = "filer-injector-webhook/inject"
-	admissionWebhookAnnotationStatusKey = "filer-injector-webhook/status"
+	admissionWebhookAnnotationInjectKey = "filer-injector-webhook.das-zone.statcan/inject"
+	admissionWebhookAnnotationStatusKey = "filer-injector-webhook.das-zone.statcan/status"
 )
 
 type WebhookServer struct {
