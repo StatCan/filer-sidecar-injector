@@ -31,9 +31,9 @@ data:
     - name: fuse-fd-passing-x
       emptyDir: {}
     - name: fuse-csi-ephemeral-x
-        csi:
-          driver: meta-fuse-csi-plugin.csi.storage.pfn.io
-          readOnly: false
-          volumeAttributes:
-            fdPassingEmptyDirName: fuse-fd-passing-x
-            fdPassingSocketName: fuse-csi-ephemeral.sock
+      csi:
+        driver: meta-fuse-csi-plugin.csi.storage.pfn.io
+        readOnly: false
+        volumeAttributes:
+          fdPassingEmptyDirName: fuse-fd-passing-x
+          fdPassingSocketName: fuse-csi-ephemeral.sock
