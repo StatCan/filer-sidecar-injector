@@ -4,11 +4,11 @@ metadata:
   name: standalone-test-pod
   namespace: jose-matsuda
   annotations:
-    filer-sidecar-injector.das-zone.statcan/inject: "yes"
-    filer-sidecar-injector-webhook.das-zone.statcan/inject: "yes"
-    sidecar-injector.das-zone.statcan/inject: "yes"
-    sidecar-injector-webhook.das-zone.statcan/inject: "yes"
-    sidecar-injector-webhook.morven.me/inject: "yes"
+    #filer-injector.das-zone.statcan/inject: "yes"
+    filer-injector-webhook.das-zone.statcan/inject: "true"
+    #sidecar-injector.das-zone.statcan/inject: "yes"
+    #sidecar-injector-webhook.das-zone.statcan/inject: "yes"
+    #sidecar-injector-webhook.morven.me/inject: "yes"
   labels:
     notebook-name: lmao
 spec:

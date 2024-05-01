@@ -66,7 +66,7 @@ func createOrUpdateMutatingWebhookConfiguration(caPEM *bytes.Buffer, webhookServ
 			},
 			NamespaceSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"sidecar-injection": "enabled",
+					"filer-sidecar-injection": "enabled",
 				},
 			},
 			FailurePolicy: &fail,
