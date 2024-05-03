@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -44,8 +45,12 @@ type WhSvrParameters struct {
 }
 
 type Config struct {
-	Containers []corev1.Container `yaml:"containers"`
-	Volumes    []corev1.Volume    `yaml:"volumes"`
+	Containers []corev1.Container `yaml:"containers,inline"` // try ,inline
+	// Do i need to make the config here more clear with adding volumeMounts?
+	// I'd think is just inherited, and the thing is I don't want to have to create another `patch`
+	// because it has to sit INSIDE the also created container.
+	// and also the example works fine lol
+	Volumes []corev1.Volume `yaml:"volumes"`
 }
 
 type patchOperation struct {
@@ -55,16 +60,20 @@ type patchOperation struct {
 }
 
 func loadConfig(configFile string) (*Config, error) {
-	data, err := ioutil.ReadFile(configFile)
+	data, err := os.ReadFile(configFile)
 	if err != nil {
 		return nil, err
 	}
 	infoLogger.Printf("New configuration: sha256sum %x", sha256.Sum256(data))
+	infoLogger.Printf("Config Found:\n" + string(data))
 
 	var cfg Config
+	// TODO check what this yaml.unmarshal is doing.
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
+	infoLogger.Printf("Printing out post yaml unmarshal")
+	infoLogger.Printf(cfg.Containers[0].String())
 
 	return &cfg, nil
 }
@@ -210,23 +219,43 @@ func createPatch(pod *corev1.Pod, sidecarConfig *Config, annotations map[string]
 	for sec := range secretList.Items {
 		// check for secrets having filer-conn-secret
 		if strings.Contains(secretList.Items[sec].Name, "filer-conn-secret") {
-			infoLogger.Printf(("Found a secret to use"))
+			infoLogger.Printf(("Found a secret to use:" + secretList.Items[sec].Name))
+			infoLogger.Printf(sidecarConfig.Containers[0].String())
 			// "Modify" the retrieved sidecarConfig, must verify the keys
 			bucketName := string(secretList.Items[sec].Data["S3_BUCKET"])
 			sidecarConfig.Containers[0].Name = bucketName + "-bucket-containers"
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
-				"--http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
+				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
 				string(secretList.Items[sec].Data["S3_BUCKET"]) + "/ /tmp"}
 			sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["S3_ACCESS"])
 			sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["S3_SECRET"])
+			infoLogger.Printf("Set the SECRET")
+			infoLogger.Printf("Size of volumeMounts array:" + string(len(sidecarConfig.Containers[0].VolumeMounts)))
+			// this doesnt give anything, as in does not exist? Which is weird because it 10/10 does in the configmap
+			infoLogger.Printf("Size of containers array:" + string(len(sidecarConfig.Containers))) // weird that this alo does not print out anything
+			infoLogger.Printf("Sidecar name: " + sidecarConfig.Containers[0].Name)                 // this works! which again is weird given the above doesnt give anything
+			infoLogger.Printf(sidecarConfig.Containers[0].String())                                // oddity
+
+			// test printing out the contents of the Containers[]
+
+			///////////////////////////////////////////////////////////////////////////////////////////
+			// it dies right at this volumeMounts thing, as if VolumeMounts[0] does not exist
 			sidecarConfig.Containers[0].VolumeMounts[0].Name = ("fuse-fd-passing-" + string(sec))
+			infoLogger.Printf("Set the volumeMounts")
+			// it then immediately dies below if it doesnt die up above, something happens with sidecarConfig
 			sidecarConfig.Volumes[0].Name = ("fuse-fd-passing-" + string(sec))
 			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + string(sec))
 			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = ("fuse-fd-passing-" + string(sec))
+			infoLogger.Printf("Before appending patches for current secret")
 			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
+			infoLogger.Printf("Container patch done")
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
+			infoLogger.Printf("Volume patch done")
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
+			infoLogger.Printf("Annotation Patch done")
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, sec, bucketName)...)
+			infoLogger.Printf("Working Volume Mount patch done")
+			panic("Exiting just so it doesnt do anything")
 		}
 	} // Surely here is where we end the loop
 	return json.Marshal(patch)
