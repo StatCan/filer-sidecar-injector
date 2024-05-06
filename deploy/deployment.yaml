@@ -23,7 +23,8 @@ spec:
           imagePullPolicy: Always
           args:
           - -service-name=filer-sidecar-injector
-          - -sidecar-config-file=/etc/webhook/config/sidecarconfig.yaml
+          - -sidecar-config-file=/etc/webhook/config/sidecarconfig.json
+          #- -sidecar-config-file=/etc/webhook/config/sidecarconfig.yaml
           env:
           - name: POD_NAMESPACE
             valueFrom:
@@ -39,4 +40,4 @@ spec:
       volumes:
       - name: webhook-config
         configMap:
-          name: filer-sidecar-injector
+          name: filer-sidecar-injector-json
