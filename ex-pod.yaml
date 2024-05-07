@@ -4,11 +4,7 @@ metadata:
   name: standalone-test-pod
   namespace: jose-matsuda
   annotations:
-    #filer-injector.das-zone.statcan/inject: "yes"
     filer-injector-webhook.das-zone.statcan/inject: "true"
-    #sidecar-injector.das-zone.statcan/inject: "yes"
-    #sidecar-injector-webhook.das-zone.statcan/inject: "yes"
-    #sidecar-injector-webhook.morven.me/inject: "yes"
   labels:
     notebook-name: lmao
 spec:
@@ -19,12 +15,3 @@ spec:
     command: ["sleep"]
     args: ["infinity"]
     workingDir: /home/jovyan
-    #command: ["/bin/sh","-c"]
-    #args: ["ls /home/jovyan/filers; echo 'Started'; sleep 60; ls /home/jovyan/filers;  echo 'slept 65 and echod'; sleep 20; ls /home/jovyan/filers; echo 'ending'; sleep infinity"]
-    
-    # This `volumeMounts` must be added by the MWC
-    #volumeMounts:
-    #- name: fuse-csi-ephemeral
-    #  mountPath: /home/jovyan/filers
-    #  readOnly: false 
-    #  mountPropagation: HostToContainer # TODO: need to validate in csi driver?

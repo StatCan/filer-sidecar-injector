@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 
 	admissionv1 "k8s.io/api/admission/v1"
@@ -162,6 +161,43 @@ func addVolume(target, added []corev1.Volume, basePath string) (patch []patchOpe
 	return patch
 }
 
+// This might be diff if only because of the {}
+func addVolumeTest(bucketName string, isFirst bool) (patch []patchOperation) {
+	// Instead of using a value from the configmap we know that this config will not change at all.
+	// Have to add the emptyDir as well as the csiDriver volume
+	if isFirst { // then we need to create the index, only applicable to first patch
+		//emptyDir
+		patch = append(patch, patchOperation{
+			Op: "add",
+			// the path for only the first value
+			Path: "/spec/volumes",
+			Value: map[string]string{
+				"name": "fuse-fd-passing-" + bucketName, "emptyDir": "{}",
+			},
+		})
+		// the csiDriver
+		//:{"csi":{"driver":"meta-fuse-csi-plugin.csi.storage.pfn.io","readOnly":false,"volumeAttributes":{"fdPassingEmptyDirName":"fuse-fd-passing-4","fdPassingSocketName":"fuse-csi-ephemeral.sock"}}}},
+		patch = append(patch, patchOperation{
+			Op:   "add",
+			Path: "/spec/volumes/-",
+			Value: map[string]string{
+				"name": "fuse-csi-ephemeral" + bucketName,
+			},
+		})
+	} else {
+		patch = append(patch, patchOperation{
+			Op: "add",
+			// the path for only the first value
+			Path: "/spec/containers/0/volumeMounts/-",
+			Value: map[string]string{
+				"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
+				"readOnly": "false", "mountPropagation": "HostToContainer",
+			},
+		})
+	}
+	return patch
+}
+
 func updateAnnotation(target map[string]string, added map[string]string) (patch []patchOperation) {
 	for key, value := range added {
 		if target == nil || target[key] == "" {
@@ -184,23 +220,36 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 	return patch
 }
 
-// This will always ADD a volumeMount to the user container spec
-// Index is used to name the `fuse-csi-ephemeral`
-func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, index string, bucketName string) (patch []patchOperation) {
+// This will always ADD a volumeMount to the user container spec, I hope
+func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketName string, isFirst bool) (patch []patchOperation) {
 	for key := range targetContainerSpec {
 		// This is a big assumption on /home/jovyan
+		// Also an assumption that the user container is the first one.
+		// Am now slightly unsure if can affect the initial container, will see
 		if targetContainerSpec[key].WorkingDir == "/home/jovyan" {
-			// targetContainerSpec = map[string]string{}
-			//
-			patch = append(patch, patchOperation{
-				Op: "add",
-				// 0 or 1 does not work for path
-				Path: "/spec/containers/volumeMounts/-",
-				Value: map[string]string{
-					"name": "fuse-csi-ephemeral-" + index, "mountPath": "/home/jovyan/" + bucketName,
-					"readOnly": "false", "mountPropagation": "HostToContainer",
-				},
-			})
+			// If it is the first one, we need to create the field
+			if isFirst {
+				patch = append(patch, patchOperation{
+					Op: "add",
+					// the path for only the first value
+					Path: "/spec/containers/0/volumeMounts",
+					// Need to see how to make it subvalues.
+					Value: map[string]string{
+						"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
+						"readOnly": "false", "mountPropagation": "HostToContainer",
+					},
+				})
+			} else {
+				patch = append(patch, patchOperation{
+					Op: "add",
+					// the path for only the first value
+					Path: "/spec/containers/0/volumeMounts/-",
+					Value: map[string]string{
+						"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
+						"readOnly": "false", "mountPropagation": "HostToContainer",
+					},
+				})
+			}
 		}
 	}
 	return patch
@@ -221,13 +270,11 @@ func createPatch(pod *corev1.Pod, sidecarConfig *Config, annotations map[string]
 		panic(err.Error())
 	}
 	secretList, _ := clientset.CoreV1().Secrets(pod.Namespace).List(context.Background(), metav1.ListOptions{})
-
+	isFirst := true
 	// TBD if this loop functions how I want it to.
 	for sec := range secretList.Items {
 		// check for secrets having filer-conn-secret
 		if strings.Contains(secretList.Items[sec].Name, "filer-conn-secret") {
-			index := strconv.Itoa(sec)
-			infoLogger.Printf("Found a secret to use, #:" + index)
 			// "Modify" the retrieved sidecarConfig, must verify the keys
 			// For some reason some values for the values are getting overwritten, as in
 			// I get fuse-fd-passing-4 for the first secret found when it should be 3
@@ -235,22 +282,24 @@ func createPatch(pod *corev1.Pod, sidecarConfig *Config, annotations map[string]
 			sidecarConfig.Containers[0].Name = bucketName + "-bucket-containers"
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
-				string(secretList.Items[sec].Data["S3_BUCKET"]) + "/ /tmp"}
+				bucketName + "/ /tmp"}
 			sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["S3_ACCESS"])
 			sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["S3_SECRET"])
 			// this VolumeMounts also gets updated to 4 for some reason
-			sidecarConfig.Containers[0].VolumeMounts[0].Name = ("fuse-fd-passing-" + index)
+			sidecarConfig.Containers[0].VolumeMounts[0].Name = ("fuse-fd-passing-" + bucketName)
 
-			sidecarConfig.Volumes[0].Name = ("fuse-fd-passing-" + index)
-			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + index)
+			sidecarConfig.Volumes[0].Name = ("fuse-fd-passing-" + bucketName)
+			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + bucketName)
 			// see this fdPassingEmptyDirName gets updated to 4 for some reason, but Volumes.Name does not
-			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = ("fuse-fd-passing-" + index)
+			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = ("fuse-fd-passing-" + bucketName)
 
 			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
+			// patch = append(patch, addVolumeTest(bucketName, isFirst)...)
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
-			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, index, bucketName)...)
+			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, bucketName, isFirst)...)
 			infoLogger.Printf("All patches appended for:" + secretList.Items[sec].Name)
+			isFirst = false // update such that no longer the first value
 		}
 	} // Surely here is where we end the loop
 	return json.Marshal(patch)
