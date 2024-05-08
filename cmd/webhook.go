@@ -35,6 +35,9 @@ type WebhookServer struct {
 	server        *http.Server
 }
 
+// Test this out
+type M map[string]interface{}
+
 // Webhook Server parameters
 type WhSvrParameters struct {
 	port           int    // webhook server port
@@ -221,6 +224,9 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 }
 
 // This will always ADD a volumeMount to the user container spec, I hope
+// error when creating "ex-pod.yaml": Internal error occurred:
+// json: cannot unmarshal object into Go struct field Container.spec.containers.volumeMounts
+// of type []v1.VolumeMount
 func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketName string, isFirst bool) (patch []patchOperation) {
 	for key := range targetContainerSpec {
 		// This is a big assumption on /home/jovyan
@@ -228,26 +234,27 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketNam
 		// Am now slightly unsure if can affect the initial container, will see
 		if targetContainerSpec[key].WorkingDir == "/home/jovyan" {
 			// If it is the first one, we need to create the field
+			var mapSlice []M
+			valueA := M{"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
+				"readOnly": false, "mountPropagation": "HostToContainer"}
+			mapSlice = append(mapSlice, valueA)
 			if isFirst {
 				patch = append(patch, patchOperation{
 					Op: "add",
 					// the path for only the first value
-					Path: "/spec/containers/0/volumeMounts",
-					// Need to see how to make it subvalues.
-					Value: map[string]string{
-						"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
-						"readOnly": "false", "mountPropagation": "HostToContainer",
-					},
+					Path:  "/spec/containers/0/volumeMounts",
+					Value: mapSlice,
 				})
 			} else {
 				patch = append(patch, patchOperation{
 					Op: "add",
-					// the path for only the first value
+					// Now that there is one that has created an array, this can just go after it.
 					Path: "/spec/containers/0/volumeMounts/-",
-					Value: map[string]string{
-						"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
-						"readOnly": "false", "mountPropagation": "HostToContainer",
-					},
+					// Value: map[string]string{
+					// 	"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
+					// 	"readOnly": "false", "mountPropagation": "HostToContainer",
+					// },
+					Value: valueA,
 				})
 			}
 		}
