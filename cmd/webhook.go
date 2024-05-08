@@ -35,7 +35,7 @@ type WebhookServer struct {
 	server        *http.Server
 }
 
-// Test this out
+// Use for easy adding of values
 type M map[string]interface{}
 
 // Webhook Server parameters
@@ -70,19 +70,11 @@ func loadConfig(configFile string) (*Config, error) {
 		return nil, err
 	}
 	infoLogger.Printf("New configuration: sha256sum %x", sha256.Sum256(data))
-	// infoLogger.Printf("Config Found:\n" + string(data))
 
 	var cfg Config
-	// TODO check what this yaml.unmarshal is doing.
-	//if err := yaml.Unmarshal(data, &cfg); err != nil {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
-	// infoLogger.Printf("Printing out post json unmarshal")
-	// infoLogger.Printf(cfg.Containers[0].String())
-	// infoLogger.Printf("Printout post json unmarshal")
-	// infoLogger.Printf(cfg.Volumes[0].String())
-	// infoLogger.Printf(cfg.Volumes[1].String())
 	return &cfg, nil
 }
 
@@ -165,41 +157,41 @@ func addVolume(target, added []corev1.Volume, basePath string) (patch []patchOpe
 }
 
 // This might be diff if only because of the {}
-func addVolumeTest(bucketName string, isFirst bool) (patch []patchOperation) {
-	// Instead of using a value from the configmap we know that this config will not change at all.
-	// Have to add the emptyDir as well as the csiDriver volume
-	if isFirst { // then we need to create the index, only applicable to first patch
-		//emptyDir
-		patch = append(patch, patchOperation{
-			Op: "add",
-			// the path for only the first value
-			Path: "/spec/volumes",
-			Value: map[string]string{
-				"name": "fuse-fd-passing-" + bucketName, "emptyDir": "{}",
-			},
-		})
-		// the csiDriver
-		//:{"csi":{"driver":"meta-fuse-csi-plugin.csi.storage.pfn.io","readOnly":false,"volumeAttributes":{"fdPassingEmptyDirName":"fuse-fd-passing-4","fdPassingSocketName":"fuse-csi-ephemeral.sock"}}}},
-		patch = append(patch, patchOperation{
-			Op:   "add",
-			Path: "/spec/volumes/-",
-			Value: map[string]string{
-				"name": "fuse-csi-ephemeral" + bucketName,
-			},
-		})
-	} else {
-		patch = append(patch, patchOperation{
-			Op: "add",
-			// the path for only the first value
-			Path: "/spec/containers/0/volumeMounts/-",
-			Value: map[string]string{
-				"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
-				"readOnly": "false", "mountPropagation": "HostToContainer",
-			},
-		})
-	}
-	return patch
-}
+// func addVolumeTest(bucketName string, isFirst bool) (patch []patchOperation) {
+// 	// Instead of using a value from the configmap we know that this config will not change at all.
+// 	// Have to add the emptyDir as well as the csiDriver volume
+// 	if isFirst { // then we need to create the index, only applicable to first patch
+// 		//emptyDir
+// 		patch = append(patch, patchOperation{
+// 			Op: "add",
+// 			// the path for only the first value
+// 			Path: "/spec/volumes",
+// 			Value: map[string]string{
+// 				"name": "fuse-fd-passing-" + bucketName, "emptyDir": "{}",
+// 			},
+// 		})
+// 		// the csiDriver
+// 		//:{"csi":{"driver":"meta-fuse-csi-plugin.csi.storage.pfn.io","readOnly":false,"volumeAttributes":{"fdPassingEmptyDirName":"fuse-fd-passing-4","fdPassingSocketName":"fuse-csi-ephemeral.sock"}}}},
+// 		patch = append(patch, patchOperation{
+// 			Op:   "add",
+// 			Path: "/spec/volumes/-",
+// 			Value: map[string]string{
+// 				"name": "fuse-csi-ephemeral" + bucketName,
+// 			},
+// 		})
+// 	} else {
+// 		patch = append(patch, patchOperation{
+// 			Op: "add",
+// 			// the path for only the first value
+// 			Path: "/spec/containers/0/volumeMounts/-",
+// 			Value: map[string]string{
+// 				"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
+// 				"readOnly": "false", "mountPropagation": "HostToContainer",
+// 			},
+// 		})
+// 	}
+// 	return patch
+// }
 
 func updateAnnotation(target map[string]string, added map[string]string) (patch []patchOperation) {
 	for key, value := range added {
@@ -223,10 +215,7 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 	return patch
 }
 
-// This will always ADD a volumeMount to the user container spec, I hope
-// error when creating "ex-pod.yaml": Internal error occurred:
-// json: cannot unmarshal object into Go struct field Container.spec.containers.volumeMounts
-// of type []v1.VolumeMount
+// This will always ADD a volumeMount to the user container spec
 func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketName string, isFirst bool) (patch []patchOperation) {
 	for key := range targetContainerSpec {
 		// This is a big assumption on /home/jovyan
