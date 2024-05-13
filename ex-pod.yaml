@@ -2,9 +2,10 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: standalone-test-pod
-  namespace: jose-matsuda
-  annotations:
-    filer-injector-webhook.das-zone.statcan/inject: "true"
+  #namespace: jose-matsuda
+  namespace: mathis-marcotte 
+  #annotations:
+  #  filer-injector-webhook.das-zone.statcan/inject: "true"
   labels:
     notebook-name: lmao
 spec:
