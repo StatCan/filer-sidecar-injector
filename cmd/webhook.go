@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/barkimedes/go-deepcopy"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,6 +76,7 @@ func loadConfig(configFile string) (*Config, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
+
 	return &cfg, nil
 }
 
@@ -131,6 +133,12 @@ func addContainer(target, added []corev1.Container, basePath string) (patch []pa
 			Path:  path,
 			Value: value,
 		})
+		// Just debugging remove ofc
+		// https://stackoverflow.com/a/62079701
+		// bs, _ := json.Marshal(value)
+		// infoLogger.Printf("Printing PATH:" + path)
+		// infoLogger.Printf("Printing value of CONTAINER patch operation: " + string(bs))
+		// end debugging
 	}
 	return patch
 }
@@ -152,6 +160,12 @@ func addVolume(target, added []corev1.Volume, basePath string) (patch []patchOpe
 			Path:  path,
 			Value: value,
 		})
+		// Just debugging remove ofc
+		// https://stackoverflow.com/a/62079701
+		// infoLogger.Printf("Printing PATH:" + path)
+		// bs, _ := json.Marshal(value)
+		// infoLogger.Printf("Printing value of VOLUME patch operation: " + string(bs))
+		// end debugging
 	}
 	return patch
 }
@@ -216,11 +230,13 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 }
 
 // This will always ADD a volumeMount to the user container spec
+// This works fine, it correctly adds with the correct bucketName
 func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketName string, isFirst bool) (patch []patchOperation) {
 	for key := range targetContainerSpec {
 		// This is a big assumption on /home/jovyan
 		// Also an assumption that the user container is the first one.
 		// Am now slightly unsure if can affect the initial container, will see
+		// it does affect the initial container good.
 		if targetContainerSpec[key].WorkingDir == "/home/jovyan" {
 			// If it is the first one, we need to create the field
 			var mapSlice []M
@@ -252,7 +268,7 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketNam
 }
 
 // create mutation patch for resoures
-func createPatch(pod *corev1.Pod, sidecarConfig *Config, annotations map[string]string) ([]byte, error) {
+func createPatch(pod *corev1.Pod, oldSidecarConfig *Config, annotations map[string]string) ([]byte, error) {
 	var patch []patchOperation
 	// creates the in-cluster config,
 	// taken directly from https://github.com/kubernetes/client-go/blob/master/examples/in-cluster-client-configuration/main.go
@@ -267,35 +283,51 @@ func createPatch(pod *corev1.Pod, sidecarConfig *Config, annotations map[string]
 	}
 	secretList, _ := clientset.CoreV1().Secrets(pod.Namespace).List(context.Background(), metav1.ListOptions{})
 	isFirst := true
-	// TBD if this loop functions how I want it to.
+
 	for sec := range secretList.Items {
 		// check for secrets having filer-conn-secret
 		if strings.Contains(secretList.Items[sec].Name, "filer-conn-secret") {
-			// "Modify" the retrieved sidecarConfig, must verify the keys
-			// For some reason some values for the values are getting overwritten, as in
-			// I get fuse-fd-passing-4 for the first secret found when it should be 3
+			// Should deep copy because things change blah
+			sidecarConfig1, _ := deepcopy.Anything(oldSidecarConfig)
+			sidecarConfig := sidecarConfig1.(*Config)
 			bucketName := string(secretList.Items[sec].Data["S3_BUCKET"])
 			sidecarConfig.Containers[0].Name = bucketName + "-bucket-containers"
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
 				bucketName + "/ /tmp"}
+
+			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + bucketName + "/fuse-csi-ephemeral.sock"
+
 			sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["S3_ACCESS"])
 			sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["S3_SECRET"])
-			// this VolumeMounts also gets updated to 4 for some reason
-			sidecarConfig.Containers[0].VolumeMounts[0].Name = ("fuse-fd-passing-" + bucketName)
+
+			sidecarConfig.Containers[0].VolumeMounts[0].Name = "fuse-fd-passing-" + bucketName
+			sidecarConfig.Containers[0].VolumeMounts[0].MountPath = "fusermount3-proxy-" + bucketName
 
 			sidecarConfig.Volumes[0].Name = ("fuse-fd-passing-" + bucketName)
 			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + bucketName)
-			// see this fdPassingEmptyDirName gets updated to 4 for some reason, but Volumes.Name does not
-			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = ("fuse-fd-passing-" + bucketName)
+			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = "fuse-fd-passing-" + bucketName
+
+			// // Printe sidecar config
+			// asd, _ := json.Marshal(sidecarConfig)
+			// infoLogger.Printf("Printing value of sidecar pre patch: " + string(asd))
+
+			// bef, _ := json.Marshal(patch)
+			// infoLogger.Printf("--------------------------------------------")
+			// infoLogger.Printf("BEFORE ADD CONTAINER: " + string(bef)) // check if messing already messed with things
 
 			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
+
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
-			// patch = append(patch, addVolumeTest(bucketName, isFirst)...)
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, bucketName, isFirst)...)
-			infoLogger.Printf("All patches appended for:" + secretList.Items[sec].Name)
 			isFirst = false // update such that no longer the first value
+
+			// Printing the Current patch to see what happens, have to check for fuse-fd-passing-s3pat but it doesnt appear in the subsequent one
+			// Something seems to happen here, when I do some patch appends, stuff gets semi-overwritten. Very odd.
+			// bs, _ := json.Marshal(patch)
+			// infoLogger.Printf("--------------------------------------------")
+			// infoLogger.Printf("Printing current PATCH: " + string(bs))
 		}
 	} // Surely here is where we end the loop
 	return json.Marshal(patch)
