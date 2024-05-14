@@ -82,11 +82,6 @@ func loadConfig(configFile string) (*Config, error) {
 
 // Check whether the target resoured need to be mutated
 func mutationRequired(metadata *metav1.ObjectMeta) bool {
-	// TEMPORARY
-	if metadata.Namespace == "jose-matsuda" {
-		infoLogger.Printf(("jose-matsuda TESTING IMAGE"))
-		return true
-	}
 	// Initially check for labels
 	if _, ok := metadata.Labels["notebook-name"]; !ok {
 		infoLogger.Printf("Skip mutation since not a notebook pod")
