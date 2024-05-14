@@ -1,19 +1,66 @@
 apiVersion: v1
 kind: ConfigMap
+# This will contain the spec we need to inject with. 
+# Hopefully we can keep these things generic, and then hotswap the config
+# Must swap out the following; INSERT-ENDPOINT, INSERT-BUCKET, INSERT-ACCESS, INSERT-SECRET, 
+#   filer-connection-x, fuse-fd-passing-x and fuse-csi-ephemeral-x
 metadata:
-  name: sidecar-injector
+  name: filer-sidecar-injector-json
+  namespace: das
   labels:
-    app: sidecar-injector
+    app: filer-sidecar-injector
 data:
-  sidecarconfig.yaml: |
-    containers:
-    - name: sidecar-nginx
-      image: nginx:1.12.2
-      imagePullPolicy: IfNotPresent
-      volumeMounts:
-      - name: nginx-conf
-        mountPath: /etc/nginx
-    volumes:
-    - name: nginx-conf
-      configMap:
-        name: nginx-configmap
+  sidecarconfig.json: |
+    {
+    "containers": [
+        {
+            "name": "filer-connection-x",
+            "image": "artifactory.cloud.statcan.ca/das-aaw-docker/mfcp-proxy-goofys-multi-inc:5gb",
+            "imagePullPolicy": "IfNotPresent",
+            "command": [
+                "/bin/bash"
+            ],
+            "args": [
+                "-c",
+                "/goofys --cheap --endpoint INSERT-ENDPOINT  --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f INSERT-BUCKET/ /tmp"
+            ],
+            "volumeMounts": [
+                {
+                    "name": "fuse-fd-passing-x",
+                    "mountPath": "/fusermount3-proxy"
+                }
+            ],
+            "env": [
+                {
+                    "name": "FUSERMOUNT3PROXY_FDPASSING_SOCKPATH",
+                    "value": "/fusermount3-proxy/fuse-csi-ephemeral.sock"
+                },
+                {
+                    "name": "AWS_ACCESS_KEY_ID",
+                    "value": "INSERT-ACCESS"
+                },
+                {
+                    "name": "AWS_SECRET_ACCESS_KEY",
+                    "value": "INSERT-SECRET"
+                }
+            ]
+        }
+      ],
+    "volumes": [
+        {
+            "name": "fuse-fd-passing-x",
+            "emptyDir": {}
+        },
+        {
+            "name": "fuse-csi-ephemeral-x",
+            "csi": {
+                "driver": "meta-fuse-csi-plugin.csi.storage.pfn.io",
+                "readOnly": false,
+                "volumeAttributes": {
+                    "fdPassingEmptyDirName": "fuse-fd-passing-x",
+                    "fdPassingSocketName": "fuse-csi-ephemeral.sock"
+                }
+            }
+        }
+      ]
+    }

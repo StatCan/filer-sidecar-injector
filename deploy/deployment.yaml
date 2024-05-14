@@ -1,27 +1,29 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sidecar-injector
+  name: filer-sidecar-injector
+  # Must be in a ns without istio
+  namespace: das
   labels:
-    app: sidecar-injector
+    app: filer-sidecar-injector
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: sidecar-injector
+      app: filer-sidecar-injector
   template:
     metadata:
       labels:
-        app: sidecar-injector
+        app: filer-sidecar-injector
     spec:
-      serviceAccountName: sidecar-injector
+      serviceAccountName: filer-sidecar-injector
       containers:
-        - name: sidecar-injector
-          image: sidecar-injector
+        - name: filer-sidecar-injector
+          image: artifactory.cloud.statcan.ca/das-aaw-docker/filer-sidecar:latest
           imagePullPolicy: Always
           args:
-          - -service-name=sidecar-injector
-          - -sidecar-config-file=/etc/webhook/config/sidecarconfig.yaml
+          - -service-name=filer-sidecar-injector
+          - -sidecar-config-file=/etc/webhook/config/sidecarconfig.json
           env:
           - name: POD_NAMESPACE
             valueFrom:
@@ -37,4 +39,4 @@ spec:
       volumes:
       - name: webhook-config
         configMap:
-          name: sidecar-injector
+          name: filer-sidecar-injector-json

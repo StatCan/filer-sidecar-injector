@@ -1,19 +1,23 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
 
-	"gopkg.in/yaml.v2"
+	"github.com/barkimedes/go-deepcopy"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 var (
@@ -22,20 +26,18 @@ var (
 	deserializer  = codecs.UniversalDeserializer()
 )
 
-var ignoredNamespaces = []string{
-	metav1.NamespaceSystem,
-	metav1.NamespacePublic,
-}
-
 const (
-	admissionWebhookAnnotationInjectKey = "sidecar-injector-webhook.morven.me/inject"
-	admissionWebhookAnnotationStatusKey = "sidecar-injector-webhook.morven.me/status"
+	admissionWebhookAnnotationInjectKey = "filer-injector-webhook.das-zone.statcan/inject"
+	admissionWebhookAnnotationStatusKey = "filer-injector-webhook.das-zone.statcan/status"
 )
 
 type WebhookServer struct {
 	sidecarConfig *Config
 	server        *http.Server
 }
+
+// Use for easy adding of values
+type M map[string]interface{}
 
 // Webhook Server parameters
 type WhSvrParameters struct {
@@ -46,8 +48,8 @@ type WhSvrParameters struct {
 }
 
 type Config struct {
-	Containers []corev1.Container `yaml:"containers"`
-	Volumes    []corev1.Volume    `yaml:"volumes"`
+	Containers []corev1.Container `json:"containers"`
+	Volumes    []corev1.Volume    `json:"volumes"`
 }
 
 type patchOperation struct {
@@ -57,14 +59,14 @@ type patchOperation struct {
 }
 
 func loadConfig(configFile string) (*Config, error) {
-	data, err := ioutil.ReadFile(configFile)
+	data, err := os.ReadFile(configFile)
 	if err != nil {
 		return nil, err
 	}
 	infoLogger.Printf("New configuration: sha256sum %x", sha256.Sum256(data))
 
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
 
@@ -72,15 +74,12 @@ func loadConfig(configFile string) (*Config, error) {
 }
 
 // Check whether the target resoured need to be mutated
-func mutationRequired(ignoredList []string, metadata *metav1.ObjectMeta) bool {
-	// skip special kubernete system namespaces
-	for _, namespace := range ignoredList {
-		if metadata.Namespace == namespace {
-			infoLogger.Printf("Skip mutation for %v for it's in special namespace:%v", metadata.Name, metadata.Namespace)
-			return false
-		}
+func mutationRequired(metadata *metav1.ObjectMeta) bool {
+	// Pod must have that label to get picked up
+	if _, ok := metadata.Labels["notebook-name"]; !ok {
+		infoLogger.Printf("Skip mutation since not a notebook pod")
+		return false
 	}
-
 	annotations := metadata.GetAnnotations()
 	if annotations == nil {
 		annotations = map[string]string{}
@@ -169,14 +168,86 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 	return patch
 }
 
+// This will ADD a volumeMount to the user container spec
+func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketName string, isFirst bool, namespace string) (patch []patchOperation) {
+	for key := range targetContainerSpec {
+		// if there is an envVar that has NB_PREFIX in it then we are in the right one
+		for envVars := range targetContainerSpec[key].Env {
+			if targetContainerSpec[key].Env[envVars].Name == "NB_PREFIX" {
+				var mapSlice []M
+				valueA := M{"name": "fuse-csi-ephemeral-" + bucketName + "-" + namespace, "mountPath": "/home/jovyan/" + bucketName,
+					"readOnly": false, "mountPropagation": "HostToContainer"}
+				mapSlice = append(mapSlice, valueA)
+				if isFirst {
+					patch = append(patch, patchOperation{
+						Op: "add",
+						// the path for only the first value
+						Path:  "/spec/containers/0/volumeMounts",
+						Value: mapSlice,
+					})
+				} else {
+					patch = append(patch, patchOperation{
+						Op: "add",
+						// Now that there is one that has created an array, this can just go after it.
+						Path:  "/spec/containers/0/volumeMounts/-",
+						Value: valueA,
+					})
+				}
+			}
+		}
+	}
+	return patch
+}
+
 // create mutation patch for resoures
-func createPatch(pod *corev1.Pod, sidecarConfig *Config, annotations map[string]string) ([]byte, error) {
+func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string) ([]byte, error) {
 	var patch []patchOperation
+	// creates the in-cluster config,
+	// taken directly from https://github.com/kubernetes/client-go/blob/master/examples/in-cluster-client-configuration/main.go
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		panic(err.Error())
+	}
+	// creates the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		panic(err.Error())
+	}
+	secretList, _ := clientset.CoreV1().Secrets(pod.Namespace).List(context.Background(), metav1.ListOptions{})
+	isFirst := true
 
-	patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
-	patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
-	patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
+	for sec := range secretList.Items {
+		// check for secrets having filer-conn-secret
+		if strings.Contains(secretList.Items[sec].Name, "filer-conn-secret") {
+			// Should deep copy because things change blah
+			tempSidecarConfig, _ := deepcopy.Anything(sidecarConfigTemplate)
+			sidecarConfig := tempSidecarConfig.(*Config)
+			bucketName := string(secretList.Items[sec].Data["S3_BUCKET"])
+			sidecarConfig.Containers[0].Name = bucketName + "-bucket-containers"
+			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
+				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
+				bucketName + "/ /tmp"}
 
+			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + bucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
+
+			sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["S3_ACCESS"])
+			sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["S3_SECRET"])
+
+			sidecarConfig.Containers[0].VolumeMounts[0].Name = "fuse-fd-passing-" + bucketName + "-" + pod.Namespace
+			sidecarConfig.Containers[0].VolumeMounts[0].MountPath = "fusermount3-proxy-" + bucketName + "-" + pod.Namespace
+
+			sidecarConfig.Volumes[0].Name = ("fuse-fd-passing-" + bucketName + "-" + pod.Namespace)
+			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + bucketName + "-" + pod.Namespace)
+			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = "fuse-fd-passing-" + bucketName + "-" + pod.Namespace
+
+			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
+
+			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
+			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
+			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, bucketName, isFirst, pod.Namespace)...)
+			isFirst = false // update such that no longer the first value
+		}
+	}
 	return json.Marshal(patch)
 }
 
@@ -197,7 +268,7 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview) *admissionv1
 		req.Kind, req.Namespace, req.Name, pod.Name, req.UID, req.Operation, req.UserInfo)
 
 	// determine whether to perform mutation
-	if !mutationRequired(ignoredNamespaces, &pod.ObjectMeta) {
+	if !mutationRequired(&pod.ObjectMeta) {
 		infoLogger.Printf("Skipping mutation for %s/%s due to policy check", pod.Namespace, pod.Name)
 		return &admissionv1.AdmissionResponse{
 			Allowed: true,

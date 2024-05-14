@@ -1,18 +1,17 @@
-namespace: sidecar-injector
+namespace: das
 
 resources:
-- namespace.yaml
 - clusterrole.yaml
 - clusterrolebinding.yaml
 - deployment.yaml
 - service.yaml
 - serviceaccount.yaml
 - configmap.yaml
-- nginx-configmap.yaml
 
 images:
-- name: sidecar-injector
-  newName: quay.io/morvencao/sidecar-injector
+- name: filer-sidecar-injector
+# must update this anways
+  newName: artifactory.cloud.statcan.ca/das-aaw-docker/filer-sidecar
   newTag: latest
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
