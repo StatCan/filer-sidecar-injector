@@ -24,7 +24,6 @@ spec:
           args:
           - -service-name=filer-sidecar-injector
           - -sidecar-config-file=/etc/webhook/config/sidecarconfig.json
-          #- -sidecar-config-file=/etc/webhook/config/sidecarconfig.yaml
           env:
           - name: POD_NAMESPACE
             valueFrom:

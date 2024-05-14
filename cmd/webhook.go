@@ -200,7 +200,7 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketNam
 }
 
 // create mutation patch for resoures
-func createPatch(pod *corev1.Pod, oldSidecarConfig *Config, annotations map[string]string) ([]byte, error) {
+func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string) ([]byte, error) {
 	var patch []patchOperation
 	// creates the in-cluster config,
 	// taken directly from https://github.com/kubernetes/client-go/blob/master/examples/in-cluster-client-configuration/main.go
@@ -220,8 +220,8 @@ func createPatch(pod *corev1.Pod, oldSidecarConfig *Config, annotations map[stri
 		// check for secrets having filer-conn-secret
 		if strings.Contains(secretList.Items[sec].Name, "filer-conn-secret") {
 			// Should deep copy because things change blah
-			sidecarConfig1, _ := deepcopy.Anything(oldSidecarConfig)
-			sidecarConfig := sidecarConfig1.(*Config)
+			tempSidecarConfig, _ := deepcopy.Anything(sidecarConfigTemplate)
+			sidecarConfig := tempSidecarConfig.(*Config)
 			bucketName := string(secretList.Items[sec].Data["S3_BUCKET"])
 			sidecarConfig.Containers[0].Name = bucketName + "-bucket-containers"
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
