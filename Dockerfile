@@ -26,9 +26,6 @@ WORKDIR /
 # install binary
 COPY --from=builder /workspace/filer-sidecar-injector .
 
-# install the prestop script
-COPY ./prestop.sh .
-
 USER 65532:65532
 
 ENTRYPOINT ["/filer-sidecar-injector"]

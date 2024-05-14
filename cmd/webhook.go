@@ -47,16 +47,9 @@ type WhSvrParameters struct {
 	sidecarCfgFile string // path to sidecar injector configuration file
 }
 
-type ConfigYaml struct {
-	Containers []corev1.Container `yaml:"containers"` // try ,inline, nope failed
-	Volumes    []corev1.Volume    `yaml:"volumes"`
-}
-
-// attempt json
 type Config struct {
 	Containers []corev1.Container `json:"containers"`
-	// do i need to add an array struct? for like volumeMounts?
-	Volumes []corev1.Volume `json:"volumes"`
+	Volumes    []corev1.Volume    `json:"volumes"`
 }
 
 type patchOperation struct {
@@ -82,7 +75,7 @@ func loadConfig(configFile string) (*Config, error) {
 
 // Check whether the target resoured need to be mutated
 func mutationRequired(metadata *metav1.ObjectMeta) bool {
-	// Initially check for labels
+	// Pod must have that label to get picked up
 	if _, ok := metadata.Labels["notebook-name"]; !ok {
 		infoLogger.Printf("Skip mutation since not a notebook pod")
 		return false
@@ -128,12 +121,6 @@ func addContainer(target, added []corev1.Container, basePath string) (patch []pa
 			Path:  path,
 			Value: value,
 		})
-		// Just debugging remove ofc
-		// https://stackoverflow.com/a/62079701
-		// bs, _ := json.Marshal(value)
-		// infoLogger.Printf("Printing PATH:" + path)
-		// infoLogger.Printf("Printing value of CONTAINER patch operation: " + string(bs))
-		// end debugging
 	}
 	return patch
 }
@@ -155,52 +142,9 @@ func addVolume(target, added []corev1.Volume, basePath string) (patch []patchOpe
 			Path:  path,
 			Value: value,
 		})
-		// Just debugging remove ofc
-		// https://stackoverflow.com/a/62079701
-		// infoLogger.Printf("Printing PATH:" + path)
-		// bs, _ := json.Marshal(value)
-		// infoLogger.Printf("Printing value of VOLUME patch operation: " + string(bs))
-		// end debugging
 	}
 	return patch
 }
-
-// This might be diff if only because of the {}
-// func addVolumeTest(bucketName string, isFirst bool) (patch []patchOperation) {
-// 	// Instead of using a value from the configmap we know that this config will not change at all.
-// 	// Have to add the emptyDir as well as the csiDriver volume
-// 	if isFirst { // then we need to create the index, only applicable to first patch
-// 		//emptyDir
-// 		patch = append(patch, patchOperation{
-// 			Op: "add",
-// 			// the path for only the first value
-// 			Path: "/spec/volumes",
-// 			Value: map[string]string{
-// 				"name": "fuse-fd-passing-" + bucketName, "emptyDir": "{}",
-// 			},
-// 		})
-// 		// the csiDriver
-// 		//:{"csi":{"driver":"meta-fuse-csi-plugin.csi.storage.pfn.io","readOnly":false,"volumeAttributes":{"fdPassingEmptyDirName":"fuse-fd-passing-4","fdPassingSocketName":"fuse-csi-ephemeral.sock"}}}},
-// 		patch = append(patch, patchOperation{
-// 			Op:   "add",
-// 			Path: "/spec/volumes/-",
-// 			Value: map[string]string{
-// 				"name": "fuse-csi-ephemeral" + bucketName,
-// 			},
-// 		})
-// 	} else {
-// 		patch = append(patch, patchOperation{
-// 			Op: "add",
-// 			// the path for only the first value
-// 			Path: "/spec/containers/0/volumeMounts/-",
-// 			Value: map[string]string{
-// 				"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
-// 				"readOnly": "false", "mountPropagation": "HostToContainer",
-// 			},
-// 		})
-// 	}
-// 	return patch
-// }
 
 func updateAnnotation(target map[string]string, added map[string]string) (patch []patchOperation) {
 	for key, value := range added {
@@ -224,38 +168,31 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 	return patch
 }
 
-// This will always ADD a volumeMount to the user container spec
-// This works fine, it correctly adds with the correct bucketName
+// This will ADD a volumeMount to the user container spec
 func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketName string, isFirst bool) (patch []patchOperation) {
 	for key := range targetContainerSpec {
-		// This is a big assumption on /home/jovyan
-		// Also an assumption that the user container is the first one.
-		// Am now slightly unsure if can affect the initial container, will see
-		// it does affect the initial container good.
-		if targetContainerSpec[key].WorkingDir == "/home/jovyan" {
-			// If it is the first one, we need to create the field
-			var mapSlice []M
-			valueA := M{"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
-				"readOnly": false, "mountPropagation": "HostToContainer"}
-			mapSlice = append(mapSlice, valueA)
-			if isFirst {
-				patch = append(patch, patchOperation{
-					Op: "add",
-					// the path for only the first value
-					Path:  "/spec/containers/0/volumeMounts",
-					Value: mapSlice,
-				})
-			} else {
-				patch = append(patch, patchOperation{
-					Op: "add",
-					// Now that there is one that has created an array, this can just go after it.
-					Path: "/spec/containers/0/volumeMounts/-",
-					// Value: map[string]string{
-					// 	"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
-					// 	"readOnly": "false", "mountPropagation": "HostToContainer",
-					// },
-					Value: valueA,
-				})
+		// if there is an envVar that has NB_PREFIX in it then we are in the right one
+		for envVars := range targetContainerSpec[key].Env {
+			if targetContainerSpec[key].Env[envVars].Name == "NB_PREFIX" {
+				var mapSlice []M
+				valueA := M{"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
+					"readOnly": false, "mountPropagation": "HostToContainer"}
+				mapSlice = append(mapSlice, valueA)
+				if isFirst {
+					patch = append(patch, patchOperation{
+						Op: "add",
+						// the path for only the first value
+						Path:  "/spec/containers/0/volumeMounts",
+						Value: mapSlice,
+					})
+				} else {
+					patch = append(patch, patchOperation{
+						Op: "add",
+						// Now that there is one that has created an array, this can just go after it.
+						Path:  "/spec/containers/0/volumeMounts/-",
+						Value: valueA,
+					})
+				}
 			}
 		}
 	}
@@ -303,28 +240,14 @@ func createPatch(pod *corev1.Pod, oldSidecarConfig *Config, annotations map[stri
 			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + bucketName)
 			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = "fuse-fd-passing-" + bucketName
 
-			// // Printe sidecar config
-			// asd, _ := json.Marshal(sidecarConfig)
-			// infoLogger.Printf("Printing value of sidecar pre patch: " + string(asd))
-
-			// bef, _ := json.Marshal(patch)
-			// infoLogger.Printf("--------------------------------------------")
-			// infoLogger.Printf("BEFORE ADD CONTAINER: " + string(bef)) // check if messing already messed with things
-
 			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
 
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, bucketName, isFirst)...)
 			isFirst = false // update such that no longer the first value
-
-			// Printing the Current patch to see what happens, have to check for fuse-fd-passing-s3pat but it doesnt appear in the subsequent one
-			// Something seems to happen here, when I do some patch appends, stuff gets semi-overwritten. Very odd.
-			// bs, _ := json.Marshal(patch)
-			// infoLogger.Printf("--------------------------------------------")
-			// infoLogger.Printf("Printing current PATCH: " + string(bs))
 		}
-	} // Surely here is where we end the loop
+	}
 	return json.Marshal(patch)
 }
 
@@ -354,7 +277,6 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview) *admissionv1
 
 	annotations := map[string]string{admissionWebhookAnnotationStatusKey: "injected"}
 	patchBytes, err := createPatch(&pod, whsvr.sidecarConfig, annotations)
-	infoLogger.Printf("--- All patches created ---")
 	if err != nil {
 		return &admissionv1.AdmissionResponse{
 			Result: &metav1.Status{

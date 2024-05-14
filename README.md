@@ -7,3 +7,10 @@ Specifically for use with Filers.
 
 ### Gotcha's
 Make sure that the namespace you want injected has the `filer-sidecar-injection: enabled` label on it. This will then add the sidecar to pods that have the `notebook-name` label present.
+Ensure that there is a secret whose name contains `filer-conn-secret` in the namespace with the following populated;
+``` 
+S3_ACCESS
+S3_BUCKET
+S3_URL
+S3_SECRET
+```
