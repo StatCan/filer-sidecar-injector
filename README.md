@@ -14,3 +14,4 @@ S3_BUCKET
 S3_URL
 S3_SECRET
 ```
+Is there the `NB_PREFIX environment variable present on the user container? We use the existence of the value to determine where to put the volume mount.

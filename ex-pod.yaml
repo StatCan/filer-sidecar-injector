@@ -16,3 +16,6 @@ spec:
     command: ["sleep"]
     args: ["infinity"]
     workingDir: /home/jovyan
+    env:
+      - name: NB_PREFIX
+        value: "test"

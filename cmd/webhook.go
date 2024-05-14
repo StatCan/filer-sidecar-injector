@@ -169,13 +169,13 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 }
 
 // This will ADD a volumeMount to the user container spec
-func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketName string, isFirst bool) (patch []patchOperation) {
+func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketName string, isFirst bool, namespace string) (patch []patchOperation) {
 	for key := range targetContainerSpec {
 		// if there is an envVar that has NB_PREFIX in it then we are in the right one
 		for envVars := range targetContainerSpec[key].Env {
 			if targetContainerSpec[key].Env[envVars].Name == "NB_PREFIX" {
 				var mapSlice []M
-				valueA := M{"name": "fuse-csi-ephemeral-" + bucketName, "mountPath": "/home/jovyan/" + bucketName,
+				valueA := M{"name": "fuse-csi-ephemeral-" + bucketName + "-" + namespace, "mountPath": "/home/jovyan/" + bucketName,
 					"readOnly": false, "mountPropagation": "HostToContainer"}
 				mapSlice = append(mapSlice, valueA)
 				if isFirst {
@@ -228,23 +228,23 @@ func createPatch(pod *corev1.Pod, oldSidecarConfig *Config, annotations map[stri
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
 				bucketName + "/ /tmp"}
 
-			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + bucketName + "/fuse-csi-ephemeral.sock"
+			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + bucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
 
 			sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["S3_ACCESS"])
 			sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["S3_SECRET"])
 
-			sidecarConfig.Containers[0].VolumeMounts[0].Name = "fuse-fd-passing-" + bucketName
-			sidecarConfig.Containers[0].VolumeMounts[0].MountPath = "fusermount3-proxy-" + bucketName
+			sidecarConfig.Containers[0].VolumeMounts[0].Name = "fuse-fd-passing-" + bucketName + "-" + pod.Namespace
+			sidecarConfig.Containers[0].VolumeMounts[0].MountPath = "fusermount3-proxy-" + bucketName + "-" + pod.Namespace
 
-			sidecarConfig.Volumes[0].Name = ("fuse-fd-passing-" + bucketName)
-			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + bucketName)
-			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = "fuse-fd-passing-" + bucketName
+			sidecarConfig.Volumes[0].Name = ("fuse-fd-passing-" + bucketName + "-" + pod.Namespace)
+			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + bucketName + "-" + pod.Namespace)
+			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = "fuse-fd-passing-" + bucketName + "-" + pod.Namespace
 
 			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
 
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
-			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, bucketName, isFirst)...)
+			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, bucketName, isFirst, pod.Namespace)...)
 			isFirst = false // update such that no longer the first value
 		}
 	}
