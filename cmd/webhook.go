@@ -219,7 +219,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	for sec := range secretList.Items {
 		// check for secrets having filer-conn-secret
 		if strings.Contains(secretList.Items[sec].Name, "filer-conn-secret") {
-			// Should deep copy because things change blah
+			// Should deep copy because things change
 			tempSidecarConfig, _ := deepcopy.Anything(sidecarConfigTemplate)
 			sidecarConfig := tempSidecarConfig.(*Config)
 			bucketName := string(secretList.Items[sec].Data["S3_BUCKET"])
