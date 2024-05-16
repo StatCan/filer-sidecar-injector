@@ -215,6 +215,10 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	}
 	secretList, _ := clientset.CoreV1().Secrets(pod.Namespace).List(context.Background(), metav1.ListOptions{})
 	isFirst := true
+	// We don't want to overwrite any mounted volumes
+	if len(pod.Spec.Volumes) > 0 {
+		isFirst = false
+	}
 
 	for sec := range secretList.Items {
 		// check for secrets having filer-conn-secret
