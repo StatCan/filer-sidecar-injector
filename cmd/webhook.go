@@ -214,10 +214,10 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 		panic(err.Error())
 	}
 	secretList, _ := clientset.CoreV1().Secrets(pod.Namespace).List(context.Background(), metav1.ListOptions{})
-	isFirst := true
+	isFirstVol := true
 	// We don't want to overwrite any mounted volumes
 	if len(pod.Spec.Volumes) > 0 {
-		isFirst = false
+		isFirstVol = false
 	}
 
 	for sec := range secretList.Items {
@@ -248,8 +248,8 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
-			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, bucketName, isFirst, pod.Namespace)...)
-			isFirst = false // update such that no longer the first value
+			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, bucketName, isFirstVol, pod.Namespace)...)
+			isFirstVol = false // update such that no longer the first value
 		}
 	}
 	return json.Marshal(patch)
