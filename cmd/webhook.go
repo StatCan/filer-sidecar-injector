@@ -176,7 +176,7 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketNam
 			if targetContainerSpec[key].Env[envVars].Name == "NB_PREFIX" {
 				var mapSlice []M
 				valueA := M{"name": "fuse-csi-ephemeral-" + bucketName + "-" + namespace,
-					"mountPath": "/home/jovyan/mnt/" + filerName + "/" + bucketName,
+					"mountPath": "/home/jovyan/filers/" + filerName + "/" + bucketName,
 					"readOnly":  false, "mountPropagation": "HostToContainer"}
 				mapSlice = append(mapSlice, valueA)
 				if isFirst {
