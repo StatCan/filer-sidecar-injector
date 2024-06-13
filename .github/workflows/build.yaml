@@ -1,0 +1,64 @@
+# This workflow will build a docker container, publish it to Azure Container Registry, and deploy it to Azure Kubernetes Service using a helm chart.
+#
+# https://github.com/Azure/actions-workflow-samples/tree/master/Kubernetes
+#
+# To configure this workflow:
+#
+# 1. Set up the following secrets in your workspace:
+#     a. REGISTRY_USERNAME with ACR username
+#     b. REGISTRY_PASSWORD with ACR Password
+#
+# 2. Change the values for the REGISTRY_NAME environment variables (below).
+name: build
+on:  
+  pull_request:
+    types:
+      - 'opened'
+      - 'synchronize'
+      - 'reopened'
+
+# Environment variables available to all jobs and steps in this workflow
+env:
+  REGISTRY_NAME: k8scc01covidacr
+  TRIVY_VERSION: "v0.43.1"
+  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+    - uses: actions/checkout@master
+
+    # Container build
+    - run: |
+        docker build -f Dockerfile -t localhost:5000/filer-sidecar:${{ github.sha }} .
+        docker push localhost:5000/filer-sidecar:${{ github.sha }}
+        docker image prune
+
+    # Scan image for vulnerabilities
+    - name: Aqua Security Trivy image scan
+      run: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin ${{ env.TRIVY_VERSION }}
+        trivy image localhost:5000/filer-sidecar:${{ github.sha }} --exit-code 1 --timeout=20m --security-checks vuln --severity CRITICAL
+    
+    - name: Test if we should push to ACR
+      id: should-i-push
+      if: |
+        github.event_name == 'push' ||
+        (
+          github.event_name == 'pull_request' &&
+          contains( github.event.pull_request.labels.*.name, 'auto-deploy')
+        )
+      run: echo 'boolean=true' >> $GITHUB_OUTPUT
+
+    - name: Push image to registry
+      if: steps.should-i-push.outputs.boolean == 'true'
+      run: |
+        docker pull localhost:5000/filer-sidecar:${{ github.sha }}
+        docker tag localhost:5000/filer-sidecar:${{ github.sha }} ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:${{ github.sha }}
+        docker push ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:${{ github.sha }}
