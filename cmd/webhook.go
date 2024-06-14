@@ -175,7 +175,7 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketNam
 		for envVars := range targetContainerSpec[key].Env {
 			if targetContainerSpec[key].Env[envVars].Name == "NB_PREFIX" {
 				var mapSlice []M
-				valueA := M{"name": "fuse-csi-ephemeral-" + bucketName + "-" + namespace,
+				valueA := M{"name": "fuse-csi-ephemeral-" + filerName + "-" + bucketName + "-" + namespace,
 					"mountPath": "/home/jovyan/filers/" + filerName + "/" + bucketName,
 					"readOnly":  false, "mountPropagation": "HostToContainer"}
 				mapSlice = append(mapSlice, valueA)
@@ -234,7 +234,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			tempSidecarConfig, _ := deepcopy.Anything(sidecarConfigTemplate)
 			sidecarConfig := tempSidecarConfig.(*Config)
 			bucketName := string(secretList.Items[sec].Data["S3_BUCKET"])
-			sidecarConfig.Containers[0].Name = bucketName + "-bucket-containers"
+			sidecarConfig.Containers[0].Name = filerName + "-" + bucketName + "-bucket-containers"
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
 				bucketName + "/ /tmp"}
@@ -245,10 +245,10 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["S3_SECRET"])
 
 			sidecarConfig.Containers[0].VolumeMounts[0].Name = "fuse-fd-passing-" + filerName + "-" + bucketName + "-" + pod.Namespace
-			sidecarConfig.Containers[0].VolumeMounts[0].MountPath = "fusermount3-proxy-" + bucketName + "-" + pod.Namespace
+			sidecarConfig.Containers[0].VolumeMounts[0].MountPath = "fusermount3-proxy-" + filerName + "-" + bucketName + "-" + pod.Namespace
 
 			sidecarConfig.Volumes[0].Name = ("fuse-fd-passing-" + filerName + "-" + bucketName + "-" + pod.Namespace)
-			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + bucketName + "-" + pod.Namespace)
+			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + filerName + "-" + bucketName + "-" + pod.Namespace)
 			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = "fuse-fd-passing-" + filerName + "-" + bucketName + "-" + pod.Namespace
 
 			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
