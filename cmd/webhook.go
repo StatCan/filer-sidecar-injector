@@ -225,7 +225,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 		// check for secrets having filer-conn-secret
 		if strings.Contains(secretList.Items[sec].Name, "filer-conn-secret") {
 			// Obtain the name of the filer to further unique mounts and organization
-			filerNameList := strings.Split(secretList.Items[sec].Name, "filer-conn-secret")
+			filerNameList := strings.Split(secretList.Items[sec].Name, "-")
 			filerName := "error" // should not happen
 			if len(filerNameList) > 1 {
 				filerName = filerNameList[0]
