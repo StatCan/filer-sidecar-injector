@@ -1,0 +1,76 @@
+# This workflow:
+# * Builds, tests, and scans all images
+# * (optionally) pushes the images to ACR
+#
+# This workflow triggers on:
+# * a push to master
+# * any create/synchronize to a PR (eg: any time you push an update to a PR).
+#
+# Image build/test/scan will run on any of the above events.
+# Image push will run only if:
+# * this is a push to master
+# * if the PR triggering this event has the label 'auto-deploy'
+#
+# To configure this workflow:
+#
+# 1. Set up the following secrets in your workspace:
+#     a. REGISTRY_USERNAME with ACR username
+#     b. REGISTRY_PASSWORD with ACR Password
+#     c. AZURE_CREDENTIALS with the output of `az ad sp create-for-rbac --sdk-auth`
+#     d. DEV_REGISTRY_USERNAME with the DEV ACR username
+#     e. DEV_REGISTRY_PASSWORD with the DEV ACR Password
+#
+# 2. Change the values for the REGISTRY_NAME
+name: build_and_push
+on:
+  push:
+    branches:
+      - 'master'
+  
+jobs:
+  # Any checks that run pre-build
+  pre-build-checks:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master       
+  build-push:
+    env:
+      REGISTRY_NAME: k8scc01covidacr
+      LOCAL_REPO: localhost:5000
+      TRIVY_VERSION: "v0.43.1"
+    needs: pre-build-checks
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+
+    - uses: actions/checkout@master
+
+    # Connect to Azure Container registry (ACR)
+    - uses: azure/docker-login@v1
+      with:
+        login-server: ${{ env.REGISTRY_NAME }}.azurecr.io
+        username: ${{ secrets.REGISTRY_USERNAME }}
+        password: ${{ secrets.REGISTRY_PASSWORD }}
+        
+    - name: Build image
+      id: build-image
+      run: |
+        docker build -f Dockerfile -t localhost:5000/filer-sidecar:latest .
+        docker push localhost:5000/filer-sidecar:latest
+        docker image prune
+
+    # Scan image for vulnerabilities
+    - name: Aqua Security Trivy image scan
+      run: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin ${{ env.TRIVY_VERSION }}
+        trivy image localhost:5000/filer-sidecar:latest --exit-code 0 --timeout=20m --security-checks vuln --severity CRITICAL
+
+    - name: Push image to registry
+      run: |
+        docker pull localhost:5000/filer-sidecar:latest
+        docker tag localhost:5000/filer-sidecar:latest ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:latest
+        docker push ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:latest
