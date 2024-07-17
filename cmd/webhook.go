@@ -234,6 +234,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			tempSidecarConfig, _ := deepcopy.Anything(sidecarConfigTemplate)
 			sidecarConfig := tempSidecarConfig.(*Config)
 
+			// bucket might be a full path with shares, meaning with slashes
 			bucketMount := string(secretList.Items[sec].Data["S3_BUCKET"])
 			// clean the bucket name in case of deep path(like "path1/path2")
 			bucketName := strings.Replace(bucketMount, "/", "-", -1)
