@@ -169,14 +169,14 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 }
 
 // This will ADD a volumeMount to the user container spec
-func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketName string, filerName string, isFirst bool, namespace string) (patch []patchOperation) {
+func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketName string, bucketMount string, filerName string, isFirst bool, namespace string) (patch []patchOperation) {
 	for key := range targetContainerSpec {
 		// if there is an envVar that has NB_PREFIX in it then we are in the right one
 		for envVars := range targetContainerSpec[key].Env {
 			if targetContainerSpec[key].Env[envVars].Name == "NB_PREFIX" {
 				var mapSlice []M
 				valueA := M{"name": "fuse-csi-ephemeral-" + filerName + "-" + bucketName + "-" + namespace,
-					"mountPath": "/home/jovyan/filers/" + filerName + "/" + bucketName,
+					"mountPath": "/home/jovyan/filers/" + filerName + "/" + bucketMount,
 					"readOnly":  false, "mountPropagation": "HostToContainer"}
 				mapSlice = append(mapSlice, valueA)
 				if isFirst {
@@ -233,11 +233,15 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			// Should deep copy because things change
 			tempSidecarConfig, _ := deepcopy.Anything(sidecarConfigTemplate)
 			sidecarConfig := tempSidecarConfig.(*Config)
-			bucketName := string(secretList.Items[sec].Data["S3_BUCKET"])
+
+			bucketMount := string(secretList.Items[sec].Data["S3_BUCKET"])
+			// clean the bucket name in case of deep path(like "path1/path2")
+			bucketName := strings.Replace(bucketMount, "/", "-", -1)
+
 			sidecarConfig.Containers[0].Name = filerName + "-" + bucketName + "-bucket-containers"
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
-				bucketName + "/ /tmp"}
+				bucketMount + "/ /tmp"}
 
 			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerName + "-" + bucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
 
@@ -255,7 +259,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
-			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, bucketName, filerName, isFirstVol, pod.Namespace)...)
+			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, bucketName, bucketMount, filerName, isFirstVol, pod.Namespace)...)
 			isFirstVol = false // update such that no longer the first value
 		}
 	}
