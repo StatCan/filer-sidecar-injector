@@ -242,7 +242,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			sidecarConfig.Containers[0].Name = filerName + "-" + bucketName + "-bucket-containers"
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
-				bucketMount + "/ /tmp"}
+				bucketMount + "/ /tmp; echo sleeping...; sleep infinity"}
 
 			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerName + "-" + bucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
 
