@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/barkimedes/go-deepcopy"
@@ -221,9 +222,11 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 		isFirstVol = false
 	}
 
+	bucketCount := 0
 	for sec := range secretList.Items {
 		// check for secrets having filer-conn-secret
 		if strings.Contains(secretList.Items[sec].Name, "filer-conn-secret") {
+			bucketCount++
 			// Obtain the name of the filer to further unique mounts and organization
 			filerNameList := strings.Split(secretList.Items[sec].Name, "-")
 			filerName := "error" // should not happen
@@ -234,27 +237,38 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			tempSidecarConfig, _ := deepcopy.Anything(sidecarConfigTemplate)
 			sidecarConfig := tempSidecarConfig.(*Config)
 
-			// bucket might be a full path with shares, meaning with slashes
+			// Bucket might be a full path with shares, meaning with slashes (path1/path2)
 			bucketMount := string(secretList.Items[sec].Data["S3_BUCKET"])
-			// clean the bucket name in case of deep path(like "path1/path2")
-			bucketName := strings.Replace(bucketMount, "/", "-", -1)
 
-			sidecarConfig.Containers[0].Name = filerName + "-" + bucketName + "-bucket-containers"
+			// Take only first path of share and limit length to 15 characters to manage length (max 63 for container names).
+			// The 15 characters limit was chosen arbitrarily and could be revised
+			bucketName := strings.Split(bucketMount, "/")[0]
+			if len(bucketName) > 15 {
+				bucketName = bucketName[0, 15]
+			}
+			// Add number to prevent duplicate
+			// TODO maybe only add number if there is duplicates detected
+			bucketName = bucketName + "-" + strconv.Itoa(bucketCount)
+
+			filerBucketName = filerName + "-" + bucketName
+
+			sidecarConfig.Containers[0].Name = filerBucketName + "-bucket-containers"
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
 				bucketMount + "/ /tmp; echo sleeping...; sleep infinity"}
 
-			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerName + "-" + bucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
+			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerBucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
 
 			sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["S3_ACCESS"])
 			sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["S3_SECRET"])
 
-			sidecarConfig.Containers[0].VolumeMounts[0].Name = "fuse-fd-passing-" + filerName + "-" + bucketName + "-" + pod.Namespace
-			sidecarConfig.Containers[0].VolumeMounts[0].MountPath = "fusermount3-proxy-" + filerName + "-" + bucketName + "-" + pod.Namespace
+			volumeMountName := "fuse-fd-passing-" + filerBucketName + "-" + pod.Namespace
+			sidecarConfig.Containers[0].VolumeMounts[0].Name = volumeMountName
+			sidecarConfig.Containers[0].VolumeMounts[0].MountPath = "fusermount3-proxy-" + filerBucketName + "-" + pod.Namespace
 
-			sidecarConfig.Volumes[0].Name = ("fuse-fd-passing-" + filerName + "-" + bucketName + "-" + pod.Namespace)
-			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + filerName + "-" + bucketName + "-" + pod.Namespace)
-			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = "fuse-fd-passing-" + filerName + "-" + bucketName + "-" + pod.Namespace
+			sidecarConfig.Volumes[0].Name = volumeMountName
+			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + filerBucketName + "-" + pod.Namespace)
+			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = volumeMountName
 
 			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
 
