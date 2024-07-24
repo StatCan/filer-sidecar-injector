@@ -244,13 +244,13 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			// The 15 characters limit was chosen arbitrarily and could be revised
 			bucketName := strings.Split(bucketMount, "/")[0]
 			if len(bucketName) > 15 {
-				bucketName = bucketName[0, 15]
+				bucketName = bucketName[0:15]
 			}
 			// Add number to prevent duplicate
 			// TODO maybe only add number if there is duplicates detected
 			bucketName = bucketName + "-" + strconv.Itoa(bucketCount)
 
-			filerBucketName = filerName + "-" + bucketName
+			filerBucketName := filerName + "-" + bucketName
 
 			sidecarConfig.Containers[0].Name = filerBucketName + "-bucket-containers"
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
