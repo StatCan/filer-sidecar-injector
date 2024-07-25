@@ -171,13 +171,13 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 }
 
 // This will ADD a volumeMount to the user container spec
-func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketName string, bucketMount string, filerName string, isFirst bool, namespace string) (patch []patchOperation) {
+func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, volumeName string, bucketMount string, filerName string, isFirst bool) (patch []patchOperation) {
 	for key := range targetContainerSpec {
 		// if there is an envVar that has NB_PREFIX in it then we are in the right one
 		for envVars := range targetContainerSpec[key].Env {
 			if targetContainerSpec[key].Env[envVars].Name == "NB_PREFIX" {
 				var mapSlice []M
-				valueA := M{"name": "fuse-csi-ephemeral-" + filerName + "-" + bucketName + "-" + namespace,
+				valueA := M{"name": volumeName,
 					"mountPath": "/home/jovyan/filers/" + filerName + "/" + bucketMount,
 					"readOnly":  false, "mountPropagation": "HostToContainer"}
 				mapSlice = append(mapSlice, valueA)
@@ -200,6 +200,14 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, bucketNam
 		}
 	}
 	return patch
+}
+
+// cuts the given string to the given length, or less if string is smaller
+func limitString(value string, limit int) string {
+	if len(value) > limit {
+		return value[0:limit]
+	}
+	return value
 }
 
 // create mutation patch for resoures
@@ -240,22 +248,29 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			// Bucket might be a full path with shares, meaning with slashes (path1/path2)
 			bucketMount := string(secretList.Items[sec].Data["S3_BUCKET"])
 
-			// Take last path of share and limit length to 15 characters to manage length (max 63 for container names).
-			// The 15 characters limit was chosen arbitrarily and could be revised
-			bucketNamePaths := strings.Split(bucketMount, "/")
-			bucketName := bucketNamePaths[len(bucketNamePaths)-1]
-			if len(bucketName) > 15 {
-				bucketName = bucketName[0:15]
+			// TODO: dd validation and graceful exit if bucketMount is empty
+
+			// Setting container name format to <filer>-<bucket>-<deepest dir>
+			// Limiting the characters for those values to respect the max length (max 63 for container names).
+			bucketDirs := strings.Split(bucketMount, "/")
+
+			//limit of 7 for filers to account for sas (ex. sasfs40)
+			limitFilerName := limitString(filerName, 7)
+			limitBucketName := limitString(bucketDirs[0], 5)
+			// TODO: add regex validation for name strings
+			filerBucketName := limitFilerName + "-" + limitBucketName
+			if len(bucketDirs) >= 2 {
+				limitDeepestDirName := limitString(bucketDirs[len(bucketDirs)-1], 5)
+				filerBucketName = filerBucketName + "-" + limitDeepestDirName
 			}
 
-			filerBucketName := filerName + "-" + bucketName
-			// Add number to prevent duplicate
+			// Add number to prevent duplicate if applicable
 			if slices.Contains(filerBucketList, filerBucketName) {
 				filerBucketName = filerBucketName + "-" + strconv.Itoa(len(filerBucketList)+1)
 			}
 			filerBucketList = append(filerBucketList, filerBucketName)
 
-			sidecarConfig.Containers[0].Name = filerBucketName + "-bucket-container"
+			sidecarConfig.Containers[0].Name = filerBucketName
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
 				bucketMount + "/ /tmp; echo sleeping...; sleep infinity"}
@@ -265,19 +280,20 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["S3_ACCESS"])
 			sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["S3_SECRET"])
 
-			volumeMountName := "fuse-fd-passing-" + filerBucketName + "-" + pod.Namespace
-			sidecarConfig.Containers[0].VolumeMounts[0].Name = volumeMountName
+			fdPassingvolumeMountName := "fuse-fd-passing-" + filerBucketName + "-" + pod.Namespace
+			sidecarConfig.Containers[0].VolumeMounts[0].Name = fdPassingvolumeMountName
 			sidecarConfig.Containers[0].VolumeMounts[0].MountPath = "fusermount3-proxy-" + filerBucketName + "-" + pod.Namespace
 
-			sidecarConfig.Volumes[0].Name = volumeMountName
-			sidecarConfig.Volumes[1].Name = ("fuse-csi-ephemeral-" + filerBucketName + "-" + pod.Namespace)
-			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = volumeMountName
+			sidecarConfig.Volumes[0].Name = fdPassingvolumeMountName
+			csiEphemeralVolumeountName := "fuse-csi-ephemeral-" + filerBucketName + "-" + pod.Namespace
+			sidecarConfig.Volumes[1].Name = csiEphemeralVolumeountName
+			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = fdPassingvolumeMountName
 
 			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
 
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
-			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, bucketName, bucketMount, filerName, isFirstVol, pod.Namespace)...)
+			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, filerName, isFirstVol)...)
 			isFirstVol = false // update such that no longer the first value
 		}
 	}
