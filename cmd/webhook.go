@@ -240,9 +240,10 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			// Bucket might be a full path with shares, meaning with slashes (path1/path2)
 			bucketMount := string(secretList.Items[sec].Data["S3_BUCKET"])
 
-			// Take only first path of share and limit length to 15 characters to manage length (max 63 for container names).
+			// Take last path of share and limit length to 15 characters to manage length (max 63 for container names).
 			// The 15 characters limit was chosen arbitrarily and could be revised
-			bucketName := strings.Split(bucketMount, "/")[0]
+			bucketNamePaths := strings.Split(bucketMount, "/")
+			bucketName := bucketNamePaths[len(bucketNamePaths)]
 			if len(bucketName) > 15 {
 				bucketName = bucketName[0:15]
 			}
