@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -222,11 +223,10 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 		isFirstVol = false
 	}
 
-	bucketCount := 0
+	filerBucketList := make([]string, 0)
 	for sec := range secretList.Items {
 		// check for secrets having filer-conn-secret
 		if strings.Contains(secretList.Items[sec].Name, "filer-conn-secret") {
-			bucketCount++
 			// Obtain the name of the filer to further unique mounts and organization
 			filerNameList := strings.Split(secretList.Items[sec].Name, "-")
 			filerName := "error" // should not happen
@@ -246,11 +246,13 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			if len(bucketName) > 15 {
 				bucketName = bucketName[0:15]
 			}
-			// Add number to prevent duplicate
-			// TODO maybe only add number if there is duplicates detected
-			bucketName = bucketName + "-" + strconv.Itoa(bucketCount)
 
 			filerBucketName := filerName + "-" + bucketName
+			// Add number to prevent duplicate
+			if slices.Contains(filerBucketList, filerBucketName) {
+				filerBucketName = filerBucketName + "-" + strconv.Itoa(len(filerBucketList)+1)
+			}
+			filerBucketList = append(filerBucketList, filerBucketName)
 
 			sidecarConfig.Containers[0].Name = filerBucketName + "-bucket-containers"
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
