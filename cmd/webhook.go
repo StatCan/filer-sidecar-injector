@@ -243,7 +243,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			// Take last path of share and limit length to 15 characters to manage length (max 63 for container names).
 			// The 15 characters limit was chosen arbitrarily and could be revised
 			bucketNamePaths := strings.Split(bucketMount, "/")
-			bucketName := bucketNamePaths[len(bucketNamePaths)]
+			bucketName := bucketNamePaths[len(bucketNamePaths)-1]
 			if len(bucketName) > 15 {
 				bucketName = bucketName[0:15]
 			}
