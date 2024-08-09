@@ -248,7 +248,17 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			// Bucket might be a full path with shares, meaning with slashes (path1/path2)
 			bucketMount := string(secretList.Items[sec].Data["S3_BUCKET"])
 
-			// TODO: dd validation and graceful exit if bucketMount is empty
+			// Validation: Ensure bucketMount is not empty
+			if bucketMount == "" {
+				continue // Skip this secret if the bucket name is empty
+			}
+
+			// Validation: Ensure S3_URL, S3_ACCESS, and S3_SECRET are present and not empty
+			if string(secretList.Items[sec].Data["S3_URL"]) == "" ||
+				string(secretList.Items[sec].Data["S3_ACCESS"]) == "" ||
+				string(secretList.Items[sec].Data["S3_SECRET"]) == "" {
+				continue // Skip this secret if any of the necessary values are empty
+			}
 
 			// Setting container name format to <filer>-<bucket>-<deepest dir>
 			// Limiting the characters for those values to respect the max length (max 63 for container names).
@@ -262,6 +272,12 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			if len(bucketDirs) >= 2 {
 				limitDeepestDirName := limitString(bucketDirs[len(bucketDirs)-1], 5)
 				filerBucketName = filerBucketName + "-" + limitDeepestDirName
+			}
+
+			// Validation: Ensure container and volume names follow the correct naming convention
+			validNameRegex := regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+			if !validNameRegex.MatchString(filerBucketName) {
+				continue // Skip this secret if the generated name is invalid
 			}
 
 			// Add number to prevent duplicate if applicable
