@@ -248,15 +248,13 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			// Bucket might be a full path with shares, meaning with slashes (path1/path2)
 			bucketMount := string(secretList.Items[sec].Data["S3_BUCKET"])
 
-			// Validation: Ensure bucketMount is not empty
-			if bucketMount == "" {
-				continue // Skip this secret if the bucket name is empty
-			}
+			// S3_URL, S3_ACCESS, and S3_SECRET are essential
+			s3Url := string(secretList.Items[sec].Data["S3_URL"])
+			s3Access := string(secretList.Items[sec].Data["S3_ACCESS"])
+			s3Secret := string(secretList.Items[sec].Data["S3_SECRET"])
 
-			// Validation: Ensure S3_URL, S3_ACCESS, and S3_SECRET are present and not empty
-			if string(secretList.Items[sec].Data["S3_URL"]) == "" ||
-				string(secretList.Items[sec].Data["S3_ACCESS"]) == "" ||
-				string(secretList.Items[sec].Data["S3_SECRET"]) == "" {
+			// Validation: Ensure bucketMount, S3_URL, S3_ACCESS, and S3_SECRET are present and not empty
+			if bucketMount == "" || s3Url == "" || s3Access == "" || s3Secret == "" {
 				continue // Skip this secret if any of the necessary values are empty
 			}
 
@@ -287,14 +285,14 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			filerBucketList = append(filerBucketList, filerBucketName)
 
 			sidecarConfig.Containers[0].Name = filerBucketName
-			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + string(secretList.Items[sec].Data["S3_URL"]) +
+			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + s3Url +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
 				bucketMount + "/ /tmp; echo sleeping...; sleep infinity"}
 
 			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerBucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
 
-			sidecarConfig.Containers[0].Env[1].Value = string(secretList.Items[sec].Data["S3_ACCESS"])
-			sidecarConfig.Containers[0].Env[2].Value = string(secretList.Items[sec].Data["S3_SECRET"])
+			sidecarConfig.Containers[0].Env[1].Value = s3Access
+			sidecarConfig.Containers[0].Env[2].Value = s3Secret
 
 			fdPassingvolumeMountName := "fuse-fd-passing-" + filerBucketName + "-" + pod.Namespace
 			sidecarConfig.Containers[0].VolumeMounts[0].Name = fdPassingvolumeMountName
