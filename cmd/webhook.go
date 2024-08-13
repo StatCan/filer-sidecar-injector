@@ -256,6 +256,8 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 			// Validation: Ensure bucketMount, S3_URL, S3_ACCESS, and S3_SECRET are present and not empty
 			if bucketMount == "" || s3Url == "" || s3Access == "" || s3Secret == "" {
+				warningLogger.Printf("Skipping secret %s in namespace %s: one or more required fields are empty (bucketMount: %s, S3_URL: %s, S3_ACCESS: %s, S3_SECRET: %s)",
+					secretList.Items[sec].Name, pod.Namespace, bucketMount, s3Url, s3Access, s3Secret)
 				continue // Skip this secret if any of the necessary values are empty
 			}
 
@@ -266,17 +268,20 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			//limit of 7 for filers to account for sas (ex. sasfs40)
 			limitFilerName := limitString(filerName, 7)
 			limitBucketName := limitString(bucketDirs[0], 5)
-			// TODO: add regex validation for name strings
+]
 			filerBucketName := limitFilerName + "-" + limitBucketName
-			if len(bucketDirs) >= 2 {
-				limitDeepestDirName := limitString(bucketDirs[len(bucketDirs)-1], 5)
-				filerBucketName = filerBucketName + "-" + limitDeepestDirName
-			}
 
 			// Validation: Ensure container and volume names follow the correct naming convention
 			validNameRegex := regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 			if !validNameRegex.MatchString(filerBucketName) {
+				warningLogger.Printf("Skipping secret %s in namespace %s: generated name %s is invalid according to the naming convention",
+					secretList.Items[sec].Name, pod.Namespace, filerBucketName)
 				continue // Skip this secret if the generated name is invalid
+			}
+
+			if len(bucketDirs) >= 2 {
+				limitDeepestDirName := limitString(bucketDirs[len(bucketDirs)-1], 5)
+				filerBucketName = filerBucketName + "-" + limitDeepestDirName
 			}
 
 			// Add number to prevent duplicate if applicable
