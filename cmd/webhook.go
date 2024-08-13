@@ -268,7 +268,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			//limit of 7 for filers to account for sas (ex. sasfs40)
 			limitFilerName := limitString(filerName, 7)
 			limitBucketName := limitString(bucketDirs[0], 5)
-]
 			filerBucketName := limitFilerName + "-" + limitBucketName
 
 			// Validation: Ensure container and volume names follow the correct naming convention
