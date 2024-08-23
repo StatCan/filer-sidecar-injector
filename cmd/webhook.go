@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"os"
 	"regexp"
@@ -203,15 +204,7 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, volumeNam
 	return patch
 }
 
-// cuts the given string to the given length, or less if string is smaller
-func limitString(value string, limit int) string {
-	if len(value) > limit {
-		return value[0:limit]
-	}
-	return value
-}
-
-// create mutation patch for resoures
+// create mutation patch for resources
 func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string) ([]byte, error) {
 	var patch []patchOperation
 	// creates the in-cluster config,
@@ -233,11 +226,11 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	}
 
 	filerBucketList := make([]string, 0)
-	for sec := range secretList.Items {
+	for _, secret := range secretList.Items {
 		// check for secrets having filer-conn-secret
-		if strings.Contains(secretList.Items[sec].Name, "filer-conn-secret") {
+		if strings.Contains(secret.Name, "filer-conn-secret") {
 			// Obtain the name of the filer to further unique mounts and organization
-			filerNameList := strings.Split(secretList.Items[sec].Name, "-")
+			filerNameList := strings.Split(secret.Name, "-")
 			filerName := "error" // should not happen
 			if len(filerNameList) > 1 {
 				filerName = filerNameList[0]
@@ -247,17 +240,17 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			sidecarConfig := tempSidecarConfig.(*Config)
 
 			// Bucket might be a full path with shares, meaning with slashes (path1/path2)
-			bucketMount := string(secretList.Items[sec].Data["S3_BUCKET"])
+			bucketMount := string(secret.Data["S3_BUCKET"])
 
 			// S3_URL, S3_ACCESS, and S3_SECRET are essential
-			s3Url := string(secretList.Items[sec].Data["S3_URL"])
-			s3Access := string(secretList.Items[sec].Data["S3_ACCESS"])
-			s3Secret := string(secretList.Items[sec].Data["S3_SECRET"])
+			s3Url := string(secret.Data["S3_URL"])
+			s3Access := string(secret.Data["S3_ACCESS"])
+			s3Secret := string(secret.Data["S3_SECRET"])
 
 			// Validation: Ensure bucketMount, S3_URL, S3_ACCESS, and S3_SECRET are present and not empty
 			if bucketMount == "" || s3Url == "" || s3Access == "" || s3Secret == "" {
 				warningLogger.Printf("Skipping secret %s in namespace %s: one or more required fields are empty (bucketMount: %s, S3_URL: %s, S3_ACCESS: %s, S3_SECRET: %s)",
-					secretList.Items[sec].Name, pod.Namespace, bucketMount, s3Url, s3Access, s3Secret)
+					secret.Name, pod.Namespace, bucketMount, s3Url, s3Access, s3Secret)
 				continue // Skip this secret if any of the necessary values are empty
 			}
 
@@ -265,17 +258,23 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			// Limiting the characters for those values to respect the max length (max 63 for container names).
 			bucketDirs := strings.Split(bucketMount, "/")
 
-			//limit of 7 for filers to account for sas (ex. sasfs40)
+			// limit of 7 for filers to account for sas (ex. sasfs40)
 			limitFilerName := limitString(filerName, 7)
 			limitBucketName := limitString(bucketDirs[0], 5)
 			filerBucketName := limitFilerName + "-" + limitBucketName
 
+			// Handle double dashes
+			filerBucketName = strings.ReplaceAll(filerBucketName, "--", "-")
+			// Handle trailing slashes
+			filerBucketName = strings.TrimRight(filerBucketName, "-")
+
 			// Validation: Ensure container and volume names follow the correct naming convention
 			validNameRegex := regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 			if !validNameRegex.MatchString(filerBucketName) {
-				warningLogger.Printf("Skipping secret %s in namespace %s: generated name %s is invalid according to the naming convention",
-					secretList.Items[sec].Name, pod.Namespace, filerBucketName)
-				continue // Skip this secret if the generated name is invalid
+				filerBucketName = cleanName(filerBucketName)
+				if !validNameRegex.MatchString(filerBucketName) {
+					filerBucketName = appendIntIfNeeded(filerBucketName)
+				}
 			}
 
 			if len(bucketDirs) >= 2 {
@@ -295,7 +294,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 				bucketMount + "/ /tmp; echo sleeping...; sleep infinity"}
 
 			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerBucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
-
 			sidecarConfig.Containers[0].Env[1].Value = s3Access
 			sidecarConfig.Containers[0].Env[2].Value = s3Secret
 
@@ -309,7 +307,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = fdPassingvolumeMountName
 
 			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
-
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, filerName, isFirstVol)...)
@@ -317,6 +314,29 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 		}
 	}
 	return json.Marshal(patch)
+}
+
+// Function to clean invalid characters
+func cleanName(name string) string {
+	name = strings.ReplaceAll(name, "--", "-")
+	name = strings.TrimRight(name, "-")
+	return name
+}
+
+// Function to append integer if illegal character remains
+func appendIntIfNeeded(name string) string {
+	if strings.ContainsAny(name, "!@#$%^&*()") { // Example illegal characters
+		name += strconv.Itoa(rand.Intn(100)) // Append random integer
+	}
+	return name
+}
+
+// Function to limit string length
+func limitString(str string, length int) string {
+	if len(str) > length {
+		return str[:length]
+	}
+	return str
 }
 
 // main mutation process
