@@ -5,13 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"math/rand"
+	"io"
 	"net/http"
 	"os"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/barkimedes/go-deepcopy"
@@ -204,21 +202,25 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, volumeNam
 	return patch
 }
 
-// create mutation patch for resources
+// createPatch function handles the mutation patch creation
 func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string) ([]byte, error) {
 	var patch []patchOperation
-	// creates the in-cluster config,
-	// taken directly from https://github.com/kubernetes/client-go/blob/master/examples/in-cluster-client-configuration/main.go
+
+	// Creates the in-cluster config
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		panic(err.Error())
 	}
-	// creates the clientset
+
+	// Creates the clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		panic(err.Error())
 	}
+
+	// Retrieves the list of secrets
 	secretList, _ := clientset.CoreV1().Secrets(pod.Namespace).List(context.Background(), metav1.ListOptions{})
+
 	isFirstVol := true
 	// We don't want to overwrite any mounted volumes
 	if len(pod.Spec.Volumes) > 0 {
@@ -226,8 +228,9 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	}
 
 	filerBucketList := make([]string, 0)
+
 	for _, secret := range secretList.Items {
-		// check for secrets having filer-conn-secret
+		// Check for secrets having filer-conn-secret
 		if strings.Contains(secret.Name, "filer-conn-secret") {
 			// Obtain the name of the filer to further unique mounts and organization
 			filerNameList := strings.Split(secret.Name, "-")
@@ -235,7 +238,8 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			if len(filerNameList) > 1 {
 				filerName = filerNameList[0]
 			}
-			// Should deep copy because things change
+
+			// Deep copy to avoid changes in original sidecar config
 			tempSidecarConfig, _ := deepcopy.Anything(sidecarConfigTemplate)
 			sidecarConfig := tempSidecarConfig.(*Config)
 
@@ -258,36 +262,27 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			// Limiting the characters for those values to respect the max length (max 63 for container names).
 			bucketDirs := strings.Split(bucketMount, "/")
 
-			// limit of 7 for filers to account for sas (ex. sasfs40)
+			// Limit the characters for filer name (max 7 chars) and bucket name (max 5 chars)
 			limitFilerName := limitString(filerName, 7)
 			limitBucketName := limitString(bucketDirs[0], 5)
 			filerBucketName := limitFilerName + "-" + limitBucketName
 
-			// Handle double dashes
-			filerBucketName = strings.ReplaceAll(filerBucketName, "--", "-")
-			// Handle trailing slashes
-			filerBucketName = strings.TrimRight(filerBucketName, "-")
+			// Clean and sanitize the filerBucketName
+			filerBucketName = cleanAndSanitizeName(filerBucketName)
 
-			// Validation: Ensure container and volume names follow the correct naming convention
-			validNameRegex := regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
-			if !validNameRegex.MatchString(filerBucketName) {
-				filerBucketName = cleanName(filerBucketName)
-				if !validNameRegex.MatchString(filerBucketName) {
-					filerBucketName = appendIntIfNeeded(filerBucketName)
-				}
-			}
-
+			// Append the deepest directory name if available
 			if len(bucketDirs) >= 2 {
 				limitDeepestDirName := limitString(bucketDirs[len(bucketDirs)-1], 5)
 				filerBucketName = filerBucketName + "-" + limitDeepestDirName
 			}
 
-			// Add number to prevent duplicate if applicable
-			if slices.Contains(filerBucketList, filerBucketName) {
-				filerBucketName = filerBucketName + "-" + strconv.Itoa(len(filerBucketList)+1)
-			}
+			// Ensure the name is unique by appending an integer if necessary
+			filerBucketName = ensureUniqueName(filerBucketName, filerBucketList)
+
+			// Add the unique name to the list
 			filerBucketList = append(filerBucketList, filerBucketName)
 
+			// Configure the sidecar container
 			sidecarConfig.Containers[0].Name = filerBucketName
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + s3Url +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
@@ -306,37 +301,56 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			sidecarConfig.Volumes[1].Name = csiEphemeralVolumeountName
 			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = fdPassingvolumeMountName
 
+			// Add container and volume to the patch
 			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, filerName, isFirstVol)...)
-			isFirstVol = false // update such that no longer the first value
+			isFirstVol = false // Update such that no longer the first value
 		}
 	}
+
 	return json.Marshal(patch)
 }
 
-// Function to clean invalid characters
-func cleanName(name string) string {
+// Function to clean and sanitize the name by removing illegal characters
+func cleanAndSanitizeName(name string) string {
+	// Define the allowed regex pattern: lowercase letters, numbers, and dashes
+	validNameRegex := regexp.MustCompile(`[^a-z0-9-]`)
+
+	// Replace any character that does not match the allowed pattern with an empty string
+	name = validNameRegex.ReplaceAllString(name, "")
+
+	// Replace double dashes with a single dash
 	name = strings.ReplaceAll(name, "--", "-")
+
+	// Remove trailing dashes
 	name = strings.TrimRight(name, "-")
+
 	return name
 }
 
-// Function to append integer if illegal character remains
-func appendIntIfNeeded(name string) string {
-	if strings.ContainsAny(name, "!@#$%^&*()") { // Example illegal characters
-		name += strconv.Itoa(rand.Intn(100)) // Append random integer
+// Function to ensure name uniqueness by appending an integer if the name already exists
+func ensureUniqueName(baseName string, existingNames []string) string {
+	// Check if the name is already in the list of existing names
+	if slices.Contains(existingNames, baseName) {
+		// Append an integer to make the name unique
+		for i := 1; ; i++ {
+			newName := fmt.Sprintf("%s-%d", baseName, i)
+			if !slices.Contains(existingNames, newName) {
+				return newName
+			}
+		}
 	}
-	return name
+	return baseName
 }
 
-// Function to limit string length
-func limitString(str string, length int) string {
-	if len(str) > length {
-		return str[:length]
+// Helper function to limit string length
+func limitString(input string, limit int) string {
+	if len(input) > limit {
+		return input[:limit]
 	}
-	return str
+	return input
 }
 
 // main mutation process
@@ -388,7 +402,7 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview) *admissionv1
 func (whsvr *WebhookServer) serve(w http.ResponseWriter, r *http.Request) {
 	var body []byte
 	if r.Body != nil {
-		if data, err := ioutil.ReadAll(r.Body); err == nil {
+		if data, err := io.ReadAll(r.Body); err == nil {
 			body = data
 		}
 	}
