@@ -313,7 +313,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	return json.Marshal(patch)
 }
 
-// Function to clean and sanitize the name by removing illegal characters
 func cleanAndSanitizeName(name string) string {
 	// Define the allowed regex pattern: lowercase letters, numbers, and dashes
 	validNameRegex := regexp.MustCompile(`[^a-z0-9-]`)
@@ -322,13 +321,19 @@ func cleanAndSanitizeName(name string) string {
 	name = validNameRegex.ReplaceAllString(name, "")
 
 	// Replace double dashes with a single dash
-	name = strings.ReplaceAll(name, "--", "-")
+	pattern := regexp.MustCompile(`-+`)
+	name = pattern.ReplaceAllString(name, "-")
+	// name = strings.ReplaceAll(name, "--", "-")
 
 	// Remove trailing dashes
 	name = strings.TrimRight(name, "-")
 
+	// Remove leading dashes
+	name = strings.TrimLeft(name, "-")
+
 	return name
 }
+
 
 // Function to ensure name uniqueness by appending an integer if the name already exists
 func ensureUniqueName(baseName string, existingNames []string) string {
