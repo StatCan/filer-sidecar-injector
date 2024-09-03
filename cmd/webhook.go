@@ -271,6 +271,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 			// Clean and sanitize the filerBucketName
 			sanitizedBucketName := cleanAndSanitizeName(filerName)
+			warningLogger.Printf("sanitizedBucketName: %s", sanitizedBucketName)
 
 			// Append the deepest directory name if available
 			if len(bucketDirs) >= 2 {
