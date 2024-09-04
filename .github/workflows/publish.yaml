@@ -59,18 +59,18 @@ jobs:
     - name: Build image
       id: build-image
       run: |
-        docker build -f Dockerfile -t localhost:5000/filer-sidecar:latest .
-        docker push localhost:5000/filer-sidecar:latest
+        docker build -f Dockerfile -t localhost:5000/filer-sidecar:${{ github.sha }} .
+        docker push localhost:5000/filer-sidecar:${{ github.sha }}
         docker image prune
 
     # Scan image for vulnerabilities
     - name: Aqua Security Trivy image scan
       run: |
         curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin ${{ env.TRIVY_VERSION }}
-        trivy image localhost:5000/filer-sidecar:latest --exit-code 0 --timeout=20m --security-checks vuln --severity CRITICAL
+        trivy image localhost:5000/filer-sidecar:${{ github.sha }} --exit-code 0 --timeout=20m --security-checks vuln --severity CRITICAL
 
     - name: Push image to registry
       run: |
-        docker pull localhost:5000/filer-sidecar:latest
-        docker tag localhost:5000/filer-sidecar:latest ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:latest
-        docker push ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:latest
+        docker pull localhost:5000/filer-sidecar:${{ github.sha }}
+        docker tag localhost:5000/filer-sidecar:${{ github.sha }} ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:${{ github.sha }}
+        docker push ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:${{ github.sha }}
