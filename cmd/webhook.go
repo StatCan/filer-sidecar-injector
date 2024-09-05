@@ -265,19 +265,16 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			bucketDirs := strings.Split(bucketMount, "/")
 
 			// Limit the characters for filer name (max 7 chars) and bucket name (max 5 chars)
-			limitFilerName := limitString(filerName, 7)
-			limitBucketName := limitString(bucketDirs[0], 5)
+			// cleanAndSanitizeName called before truncation
+			limitFilerName := limitString(cleanAndSanitizeName(filerName), 7)
+			limitBucketName := limitString(cleanAndSanitizeName(bucketDirs[0]), 5)
 			filerBucketName := limitFilerName + "-" + limitBucketName
-
-			// Clean and sanitize the filerBucketName
-			sanitizedBucketName := cleanAndSanitizeName(filerName)
-			warningLogger.Printf("sanitizedBucketName: %s", sanitizedBucketName)
 
 			// Append the deepest directory name if available
 			if len(bucketDirs) >= 2 {
-				limitDeepestDirName := limitString(bucketDirs[len(bucketDirs)-1], 5)
-				// Clean and sanitize the filerBucketName
-				filerBucketName = cleanAndSanitizeName(filerBucketName + "-" + limitDeepestDirName)
+				limitDeepestDirName := limitString(cleanAndSanitizeName(bucketDirs[len(bucketDirs)-1]), 5)
+				// Clean and sanitize the filerBucketName after concatenating limitDeepestDirName
+				filerBucketName = filerBucketName + "-" + limitDeepestDirName
 			}
 
 			// Ensure the name is unique by appending an integer if necessary
@@ -287,10 +284,11 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			filerBucketList = append(filerBucketList, filerBucketName)
 
 			// Configure the sidecar container
+			// TODO: verify cleaning here
 			sidecarConfig.Containers[0].Name = filerBucketName
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + s3Url +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
-				sanitizedBucketName + "/ /tmp; echo sleeping...; sleep infinity"}
+				cleanAndSanitizeName(bucketMount) + "/ /tmp; echo sleeping...; sleep infinity"}
 
 			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerBucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
 			sidecarConfig.Containers[0].Env[1].Value = s3Access
