@@ -276,7 +276,8 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			// Append the deepest directory name if available
 			if len(bucketDirs) >= 2 {
 				limitDeepestDirName := limitString(bucketDirs[len(bucketDirs)-1], 5)
-				filerBucketName = filerBucketName + "-" + limitDeepestDirName
+				// Clean and sanitize the filerBucketName
+				filerBucketName = cleanAndSanitizeName(filerBucketName + "-" + limitDeepestDirName)
 			}
 
 			// Ensure the name is unique by appending an integer if necessary
