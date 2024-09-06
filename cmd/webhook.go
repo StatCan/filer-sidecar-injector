@@ -246,7 +246,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			sidecarConfig := tempSidecarConfig.(*Config)
 
 			// Bucket might be a full path with shares, meaning with slashes (path1/path2)
-			bucketMount := string(secret.Data["S3_BUCKET"])
+			bucketMount := cleanAndSanitizeName(string(secret.Data["S3_BUCKET"]))
 
 			// S3_URL, S3_ACCESS, and S3_SECRET are essential
 			s3Url := string(secret.Data["S3_URL"])
@@ -277,7 +277,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			}
 
 			// Ensure the name is unique by appending an integer if necessary
-			filerBucketName = ensureUniqueName(filerBucketName, filerBucketList)
+			filerBucketName = cleanAndSanitizeName(ensureUniqueName(filerBucketName, filerBucketList))
 
 			// Add the unique name to the list
 			filerBucketList = append(filerBucketList, cleanAndSanitizeName(filerBucketName))
