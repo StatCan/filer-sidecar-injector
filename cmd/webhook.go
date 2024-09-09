@@ -13,11 +13,9 @@ import (
 	"strings"
 
 	"github.com/barkimedes/go-deepcopy"
-
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/kubernetes"
@@ -246,6 +244,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			sidecarConfig := tempSidecarConfig.(*Config)
 
 			// Bucket might be a full path with shares, meaning with slashes (path1/path2)
+			// We have to clean this as it will be used in the goofys mount argument
 			bucketMount := cleanAndSanitizeName(string(secret.Data["S3_BUCKET"]))
 
 			// S3_URL, S3_ACCESS, and S3_SECRET are essential
@@ -265,29 +264,31 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			bucketDirs := strings.Split(bucketMount, "/")
 
 			// Limit the characters for filer name (max 7 chars) and bucket name (max 5 chars)
-			// cleanAndSanitizeName called before truncation
+			// cleanAndSanitizeName is called before truncation because we want to guarantee the length
+			// of the limitFilerName is 7 chars and the limitBucketName is 5 chars
 			limitFilerName := limitString(cleanAndSanitizeName(filerName), 7)
 			limitBucketName := limitString(cleanAndSanitizeName(bucketDirs[0]), 5)
 			filerBucketName := limitFilerName + "-" + limitBucketName
 
 			// Append the deepest directory name if available
 			if len(bucketDirs) >= 2 {
-				limitDeepestDirName := limitString(cleanAndSanitizeName(bucketDirs[len(bucketDirs)-1]), 5)
-				filerBucketName = cleanAndSanitizeName(filerBucketName + "-" + limitDeepestDirName)
+				limitDeepestDirName := limitString(bucketDirs[len(bucketDirs)-1], 5)
+				if limitDeepestDirName != "" {
+					filerBucketName = filerBucketName + "-" + limitDeepestDirName
+				}
 			}
 
 			// Ensure the name is unique by appending an integer if necessary
-			filerBucketName = cleanAndSanitizeName(ensureUniqueName(filerBucketName, filerBucketList))
+			filerBucketName = ensureUniqueName(filerBucketName, filerBucketList)
 
 			// Add the unique name to the list
-			filerBucketList = append(filerBucketList, cleanAndSanitizeName(filerBucketName))
+			filerBucketList = append(filerBucketList, filerBucketName)
 
 			// Configure the sidecar container
-			// TODO: verify cleaning here
 			sidecarConfig.Containers[0].Name = filerBucketName
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + s3Url +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
-				cleanAndSanitizeName(bucketMount) + "/ /tmp; echo sleeping...; sleep infinity"}
+				bucketMount + "/ /tmp; echo sleeping...; sleep infinity"}
 
 			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerBucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
 			sidecarConfig.Containers[0].Env[1].Value = s3Access
