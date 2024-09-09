@@ -276,9 +276,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 				filerBucketName = filerBucketName + "-" + limitDeepestDirName
 			}
 
-			// Ensure the name is unique by appending an integer if necessary
-			filerBucketName = cleanAndSanitizeName(ensureUniqueName(filerBucketName, filerBucketList))
-
 			// Add the unique name to the list
 			filerBucketList = append(filerBucketList, filerBucketName)
 
@@ -335,21 +332,6 @@ func cleanAndSanitizeName(name string) string {
 	warningLogger.Printf("Cleaned original name (%s) to clean name (%s)", ogName, name)
 
 	return name
-}
-
-// Function to ensure name uniqueness by appending an integer if the name already exists
-func ensureUniqueName(baseName string, existingNames []string) string {
-	// Check if the name is already in the list of existing names
-	if slices.Contains(existingNames, baseName) {
-		// Append an integer to make the name unique
-		for i := 1; ; i++ {
-			newName := fmt.Sprintf("%s-%d", baseName, i)
-			if !slices.Contains(existingNames, newName) {
-				return newName
-			}
-		}
-	}
-	return baseName
 }
 
 // Helper function to limit string length
