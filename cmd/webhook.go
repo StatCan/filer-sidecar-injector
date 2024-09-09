@@ -245,7 +245,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 			// Bucket might be a full path with shares, meaning with slashes (path1/path2)
 			// We have to clean this as it will be used in the goofys mount argument
-			bucketMount := cleanAndSanitizeName(string(secret.Data["S3_BUCKET"]))
+			bucketMount := string(secret.Data["S3_BUCKET"])
 
 			// S3_URL, S3_ACCESS, and S3_SECRET are essential
 			s3Url := string(secret.Data["S3_URL"])
