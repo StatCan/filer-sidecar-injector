@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/barkimedes/go-deepcopy"
@@ -263,15 +264,20 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			bucketDirs := strings.Split(bucketMount, "/")
 
 			// Limit the characters for filer name (max 7 chars) and bucket name (max 5 chars)
+			// cleanAndSanitizeName is called before truncation because we want to guarantee the length
+			// of the limitFilerName is 7 chars and the limitBucketName is 5 chars
 			limitFilerName := limitString(filerName, 7)
 			limitBucketName := limitString(bucketDirs[0], 5)
-			filerBucketName := cleanAndSanitizeName(limitFilerName + "-" + limitBucketName)
+			filerBucketName := limitFilerName + "-" + limitBucketName
 
 			// Append the deepest directory name if available
 			if len(bucketDirs) >= 2 {
 				limitDeepestDirName := limitString(bucketDirs[len(bucketDirs)-1], 5)
 				filerBucketName = filerBucketName + "-" + limitDeepestDirName
 			}
+
+			// Ensure the name is unique by appending an integer if necessary
+			filerBucketName = cleanAndSanitizeName(ensureUniqueName(filerBucketName, filerBucketList))
 
 			// Add the unique name to the list
 			filerBucketList = append(filerBucketList, filerBucketName)
@@ -329,6 +335,21 @@ func cleanAndSanitizeName(name string) string {
 	warningLogger.Printf("Cleaned original name (%s) to clean name (%s)", ogName, name)
 
 	return name
+}
+
+// Function to ensure name uniqueness by appending an integer if the name already exists
+func ensureUniqueName(baseName string, existingNames []string) string {
+	// Check if the name is already in the list of existing names
+	if slices.Contains(existingNames, baseName) {
+		// Append an integer to make the name unique
+		for i := 1; ; i++ {
+			newName := fmt.Sprintf("%s-%d", baseName, i)
+			if !slices.Contains(existingNames, newName) {
+				return newName
+			}
+		}
+	}
+	return baseName
 }
 
 // Helper function to limit string length
