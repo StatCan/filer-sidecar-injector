@@ -334,7 +334,7 @@ func cleanAndSanitizeName(name string) string {
 	// Remove leading dashes
 	name = strings.TrimLeft(name, "-")
 
-	warningLogger.Printf("Cleaned %s to %s", ogName, name)
+	warningLogger.Printf("Cleaned original name (%s) to clean name (%s)", ogName, name)
 
 	return name
 }
