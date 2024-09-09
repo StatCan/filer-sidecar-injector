@@ -288,8 +288,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			sidecarConfig.Containers[0].Name = filerBucketName
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + s3Url +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
-				cleanAndSanitizeName(bucketMount) + "/ /tmp; echo sleeping...; sleep infinity"}
-			// It seems stupid to add cleanAndSanitizeName here but goofys is failing so let's try this.
+				bucketMount + "/ /tmp; echo sleeping...; sleep infinity"}
 			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerBucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
 			sidecarConfig.Containers[0].Env[1].Value = s3Access
 			sidecarConfig.Containers[0].Env[2].Value = s3Secret
@@ -319,6 +318,8 @@ func cleanAndSanitizeName(name string) string {
 	// Define the allowed regex pattern: lowercase letters, numbers, and dashes
 	validNameRegex := regexp.MustCompile(`[^a-z0-9-]`)
 
+	ogName := name
+
 	// Replace any character that does not match the allowed pattern with an empty string
 	name = validNameRegex.ReplaceAllString(name, "")
 
@@ -332,6 +333,8 @@ func cleanAndSanitizeName(name string) string {
 
 	// Remove leading dashes
 	name = strings.TrimLeft(name, "-")
+
+	warningLogger.Printf("Cleaned %s to %s", ogName, name)
 
 	return name
 }
