@@ -2,6 +2,7 @@
 # * Builds, tests, and scans all images
 # * (optionally) pushes the images to ACR
 #
+#
 # This workflow triggers on:
 # * a push to master
 # * any create/synchronize to a PR (eg: any time you push an update to a PR).
@@ -72,5 +73,5 @@ jobs:
     - name: Push image to registry
       run: |
         docker pull localhost:5000/filer-sidecar:latest
-        docker tag localhost:5000/filer-sidecar:latest ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:latest
-        docker push ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:latest
+        docker tag localhost:5000/filer-sidecar:latest ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:${{ github.sha }}
+        docker push ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:${{ github.sha }}
