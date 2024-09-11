@@ -312,7 +312,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 func cleanAndSanitizeName(name string) string {
 	// Define the allowed regex pattern: lowercase letters, numbers, and dashes
 	validNameRegex := regexp.MustCompile(`[^a-z0-9-]`)
-	
+
 	// Replace any character that does not match the allowed pattern with an empty string
 	name = validNameRegex.ReplaceAllString(name, "")
 
