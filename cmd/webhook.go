@@ -244,7 +244,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			sidecarConfig := tempSidecarConfig.(*Config)
 
 			// Bucket might be a full path with shares, meaning with slashes (path1/path2)
-			// We have to clean this as it will be used in the goofys mount argument
 			bucketMount := string(secret.Data["S3_BUCKET"])
 
 			// S3_URL, S3_ACCESS, and S3_SECRET are essential
@@ -264,8 +263,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			bucketDirs := strings.Split(bucketMount, "/")
 
 			// Limit the characters for filer name (max 7 chars) and bucket name (max 5 chars)
-			// cleanAndSanitizeName is called before truncation because we want to guarantee the length
-			// of the limitFilerName is 7 chars and the limitBucketName is 5 chars
 			limitFilerName := limitString(filerName, 7)
 			limitBucketName := limitString(bucketDirs[0], 5)
 			filerBucketName := limitFilerName + "-" + limitBucketName
