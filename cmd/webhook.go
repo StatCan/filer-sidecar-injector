@@ -310,6 +310,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	return json.Marshal(patch)
 }
 
+// Function to clean and sanitize the name by removing illegal characters
 func cleanAndSanitizeName(name string) string {
 	// Define the allowed regex pattern: lowercase letters, numbers, and dashes
 	validNameRegex := regexp.MustCompile(`[^a-z0-9-]`)
