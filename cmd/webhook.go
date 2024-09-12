@@ -321,7 +321,6 @@ func cleanAndSanitizeName(name string) string {
 	// Replace double dashes with a single dash
 	pattern := regexp.MustCompile(`-+`)
 	name = pattern.ReplaceAllString(name, "-")
-	// name = strings.ReplaceAll(name, "--", "-")
 
 	// Remove trailing dashes
 	name = strings.TrimRight(name, "-")
