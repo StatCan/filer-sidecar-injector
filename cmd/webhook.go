@@ -267,9 +267,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			limitBucketName := limitString(bucketDirs[0], 5)
 			filerBucketName := limitFilerName + "-" + limitBucketName
 
-			// Clean and sanitize the filerBucketName
-			filerBucketName = cleanAndSanitizeName(filerBucketName)
-
 			// Append the deepest directory name if available
 			if len(bucketDirs) >= 2 {
 				limitDeepestDirName := limitString(bucketDirs[len(bucketDirs)-1], 5)
@@ -277,7 +274,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			}
 
 			// Ensure the name is unique by appending an integer if necessary
-			filerBucketName = ensureUniqueName(filerBucketName, filerBucketList)
+			filerBucketName = cleanAndSanitizeName(ensureUniqueName(filerBucketName, filerBucketList))
 
 			// Add the unique name to the list
 			filerBucketList = append(filerBucketList, filerBucketName)
@@ -322,10 +319,14 @@ func cleanAndSanitizeName(name string) string {
 	name = validNameRegex.ReplaceAllString(name, "")
 
 	// Replace double dashes with a single dash
-	name = strings.ReplaceAll(name, "--", "-")
+	pattern := regexp.MustCompile(`-+`)
+	name = pattern.ReplaceAllString(name, "-")
 
 	// Remove trailing dashes
 	name = strings.TrimRight(name, "-")
+
+	// Remove leading dashes
+	name = strings.TrimLeft(name, "-")
 
 	return name
 }
