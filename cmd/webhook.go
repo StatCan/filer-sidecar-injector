@@ -229,9 +229,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 		panic(err.Error())
 	}
 
-	// Retrieves the list of secrets
-	secretList, _ := clientset.CoreV1().Secrets(pod.Namespace).List(context.Background(), metav1.ListOptions{})
-
 	// Retrieves the configmap containing the list of shares. Must loop through this
 	// Format is "filer1": '["share1", "share2"]'
 	svmShareList, _ := clientset.CoreV1().ConfigMaps(pod.Namespace).Get(context.Background(), requestConfigMapName, metav1.GetOptions{})
@@ -247,6 +244,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	// https://goplay.tools/snippet/zUiIt23ZYVK
 	var shareList []string
 	for svmName := range svmShareList.Data {
+		// Retrieve the associated secret with the svm
 		secret, err := clientset.CoreV1().Secrets(pod.Namespace).Get(context.Background(),
 			svmName+"-filer-conn-secret", metav1.GetOptions{})
 		if err != nil {
@@ -254,6 +252,9 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 				" so mounting will be skipped")
 			continue
 		}
+		s3Url := string(secret.Data["S3_URL"])
+		s3Access := string(secret.Data["S3_ACCESS"])
+		s3Secret := string(secret.Data["S3_SECRET"])
 		// Unmarshal to get list of wanted shares to mount
 		err = json.Unmarshal([]byte(svmShareList.Data[svmName]), &shareList)
 		if err != nil {
@@ -263,46 +264,22 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 		}
 		// iterate through and do the patch
 		for share := range shareList {
-			// do stuff
-		}
-
-	}
-	// Rather than loop through secrets we loop through the shareList
-	for _, secret := range secretList.Items {
-		// Check for secrets having filer-conn-secret
-		if strings.Contains(secret.Name, "filer-conn-secret") {
-			// Obtain the name of the filer to further unique mounts and organization
-			filerNameList := strings.Split(secret.Name, "-")
-			filerName := "error" // should not happen
-			if len(filerNameList) > 1 {
-				filerName = filerNameList[0]
-			}
-
 			// Deep copy to avoid changes in original sidecar config
 			tempSidecarConfig, _ := deepcopy.Anything(sidecarConfigTemplate)
 			sidecarConfig := tempSidecarConfig.(*Config)
-
-			// Bucket might be a full path with shares, meaning with slashes (path1/path2)
-			bucketMount := string(secret.Data["S3_BUCKET"])
-
-			// S3_URL, S3_ACCESS, and S3_SECRET are essential
-			s3Url := string(secret.Data["S3_URL"])
-			s3Access := string(secret.Data["S3_ACCESS"])
-			s3Secret := string(secret.Data["S3_SECRET"])
-
+			bucketMount := shareList[share]
 			// Validation: Ensure bucketMount, S3_URL, S3_ACCESS, and S3_SECRET are present and not empty
 			if bucketMount == "" || s3Url == "" || s3Access == "" || s3Secret == "" {
 				warningLogger.Printf("Skipping secret %s in namespace %s: one or more required fields are empty (bucketMount: %s, S3_URL: %s, S3_ACCESS: %s, S3_SECRET: %s)",
 					secret.Name, pod.Namespace, bucketMount, s3Url, s3Access, s3Secret)
 				continue // Skip this secret if any of the necessary values are empty
 			}
-
-			// Setting container name format to <filer>-<bucket>-<deepest dir>
+			// Setting container name format to <svm>-<dir>-<deepest dir>
 			// Limiting the characters for those values to respect the max length (max 63 for container names).
 			bucketDirs := strings.Split(bucketMount, "/")
 
 			// Limit the characters for filer name (max 7 chars) and bucket name (max 5 chars)
-			limitFilerName := limitString(filerName, 7)
+			limitFilerName := limitString(svmName, 7)
 			limitBucketName := limitString(bucketDirs[0], 5)
 			filerBucketName := limitFilerName + "-" + limitBucketName
 
@@ -317,7 +294,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 			// Add the unique name to the list
 			filerBucketList = append(filerBucketList, filerBucketName)
-
 			// Configure the sidecar container
 			sidecarConfig.Containers[0].Name = filerBucketName
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + s3Url +
@@ -341,11 +317,11 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
-			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, filerName, isFirstVol)...)
+			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
 			isFirstVol = false // Update such that no longer the first value
-		}
-	}
 
+		} // end shareList loop
+	} // end loop through user configmap
 	return json.Marshal(patch)
 }
 
