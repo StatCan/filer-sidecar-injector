@@ -53,13 +53,6 @@ type WhSvrParameters struct {
 	sidecarCfgFile string // path to sidecar injector configuration file
 }
 
-// Format of requested shares configmap
-// delete?
-type requestCm struct {
-	svm    string
-	shares []string
-}
-
 type Config struct {
 	Containers []corev1.Container `json:"containers"`
 	Volumes    []corev1.Volume    `json:"volumes"`
