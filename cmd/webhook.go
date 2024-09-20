@@ -16,6 +16,7 @@ import (
 	"github.com/barkimedes/go-deepcopy"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -240,7 +241,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 		// Retrieve the associated secret with the svm
 		secret, err := clientset.CoreV1().Secrets(pod.Namespace).Get(context.Background(),
 			svmName+"-filer-conn-secret", metav1.GetOptions{})
-		if err != nil {
+		if k8serrors.IsNotFound(err) {
 			klog.Infof("Error, secret for svm:" + svmName + " was not found for ns:" + pod.Namespace +
 				" so mounting will be skipped")
 			continue
