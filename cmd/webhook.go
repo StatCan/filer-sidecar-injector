@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"net/http"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -32,6 +34,8 @@ const (
 	admissionWebhookAnnotationInjectKey = "filer-injector-webhook.das-zone.statcan/inject"
 	admissionWebhookAnnotationStatusKey = "filer-injector-webhook.das-zone.statcan/status"
 )
+
+const requestConfigMapName = "share-requests"
 
 type WebhookServer struct {
 	sidecarConfig *Config
@@ -47,6 +51,13 @@ type WhSvrParameters struct {
 	certFile       string // path to the x509 certificate for https
 	keyFile        string // path to the x509 private key matching `CertFile`
 	sidecarCfgFile string // path to sidecar injector configuration file
+}
+
+// Format of requested shares configmap
+// delete?
+type requestCm struct {
+	svm    string
+	shares []string
 }
 
 type Config struct {
@@ -221,6 +232,9 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	// Retrieves the list of secrets
 	secretList, _ := clientset.CoreV1().Secrets(pod.Namespace).List(context.Background(), metav1.ListOptions{})
 
+	// Retrieves the configmap containing the list of shares. Must loop through this
+	// Format is "filer1": '["share1", "share2"]'
+	svmShareList, _ := clientset.CoreV1().ConfigMaps(pod.Namespace).Get(context.Background(), requestConfigMapName, metav1.GetOptions{})
 	isFirstVol := true
 	// We don't want to overwrite any mounted volumes
 	if len(pod.Spec.Volumes) > 0 {
@@ -229,6 +243,31 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 	filerBucketList := make([]string, 0)
 
+	// shareList.Data is a map[string]string
+	// https://goplay.tools/snippet/zUiIt23ZYVK
+	var shareList []string
+	for svmName := range svmShareList.Data {
+		secret, err := clientset.CoreV1().Secrets(pod.Namespace).Get(context.Background(),
+			svmName+"-filer-conn-secret", metav1.GetOptions{})
+		if err != nil {
+			klog.Infof("Error, secret for svm:" + svmName + " was not found for ns:" + pod.Namespace +
+				" so mounting will be skipped")
+			continue
+		}
+		// Unmarshal to get list of wanted shares to mount
+		err = json.Unmarshal([]byte(svmShareList.Data[svmName]), &shareList)
+		if err != nil {
+			klog.Infof("Error unmarshalling the share list for svm:" + svmName +
+				" for ns:" + pod.Namespace + " so mounting will be skipped")
+			continue
+		}
+		// iterate through and do the patch
+		for share := range shareList {
+			// do stuff
+		}
+
+	}
+	// Rather than loop through secrets we loop through the shareList
 	for _, secret := range secretList.Items {
 		// Check for secrets having filer-conn-secret
 		if strings.Contains(secret.Name, "filer-conn-secret") {
@@ -283,7 +322,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			sidecarConfig.Containers[0].Name = filerBucketName
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + s3Url +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
-				bucketMount + "/ /tmp; echo sleeping...; sleep infinity"}
+				hashBucketName(bucketMount) + "/ /tmp; echo sleeping...; sleep infinity"}
 
 			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerBucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
 			sidecarConfig.Containers[0].Env[1].Value = s3Access
@@ -352,6 +391,13 @@ func limitString(input string, limit int) string {
 		return input[:limit]
 	}
 	return input
+}
+
+// Applies a hash function to the bucketname to make it S3 compliant
+func hashBucketName(name string) string {
+	h := fnv.New64a()
+	h.Write([]byte(name))
+	return string(h.Sum64())
 }
 
 // main mutation process
