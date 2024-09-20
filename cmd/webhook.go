@@ -225,7 +225,10 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 	// Retrieves the configmap containing the list of shares. Must loop through this
 	// Format is "filer1": '["share1", "share2"]'
-	svmShareList, _ := clientset.CoreV1().ConfigMaps(pod.Namespace).Get(context.Background(), requestConfigMapName, metav1.GetOptions{})
+	svmShareList, errorSvm := clientset.CoreV1().ConfigMaps(pod.Namespace).Get(context.Background(), requestConfigMapName, metav1.GetOptions{})
+	if k8serrors.IsNotFound(errorSvm) {
+		return []byte(""), errorSvm
+	}
 	isFirstVol := true
 	// We don't want to overwrite any mounted volumes
 	if len(pod.Spec.Volumes) > 0 {
