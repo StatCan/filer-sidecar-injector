@@ -36,7 +36,7 @@ const (
 	admissionWebhookAnnotationStatusKey = "filer-injector-webhook.das-zone.statcan/status"
 )
 
-const requestConfigMapName = "share-requests"
+const existingShares = "existing-shares"
 
 type WebhookServer struct {
 	sidecarConfig *Config
@@ -225,7 +225,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 	// Retrieves the configmap containing the list of shares. Must loop through this
 	// Format is "filer1": '["share1", "share2"]'
-	svmShareList, errorSvm := clientset.CoreV1().ConfigMaps(pod.Namespace).Get(context.Background(), requestConfigMapName, metav1.GetOptions{})
+	svmShareList, errorSvm := clientset.CoreV1().ConfigMaps(pod.Namespace).Get(context.Background(), existingShares, metav1.GetOptions{})
 	if k8serrors.IsNotFound(errorSvm) {
 		return []byte(""), errorSvm
 	}
