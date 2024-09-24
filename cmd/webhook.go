@@ -239,7 +239,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	for svmName := range svmShareList.Data {
 		// Retrieve the associated secret with the svm
 		secret, err := clientset.CoreV1().Secrets(pod.Namespace).Get(context.Background(),
-			svmName+"-filer-conn-secret", metav1.GetOptions{})
+			svmName+"-conn-secret", metav1.GetOptions{})
 		if k8serrors.IsNotFound(err) {
 			klog.Infof("Error, secret for svm:" + svmName + " was not found for ns:" + pod.Namespace +
 				" so mounting will be skipped")
