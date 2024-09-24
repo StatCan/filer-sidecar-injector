@@ -227,7 +227,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	// Format is "filer1": '["share1", "share2"]'
 	svmShareList, errorSvm := clientset.CoreV1().ConfigMaps(pod.Namespace).Get(context.Background(), existingShares, metav1.GetOptions{})
 	if k8serrors.IsNotFound(errorSvm) {
-		return []byte(""), errorSvm
+		return nil, errorSvm
 	}
 	isFirstVol := true
 	// We don't want to overwrite any mounted volumes
@@ -249,7 +249,8 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 				" so mounting will be skipped")
 			continue
 		}
-		s3Url := string(secret.Data["S3_URL"])
+		// TODO update with retrieving the main configmap...
+		// s3Url := string(secret.Data["S3_URL"])
 		s3Access := string(secret.Data["S3_ACCESS"])
 		s3Secret := string(secret.Data["S3_SECRET"])
 		// Unmarshal to get list of wanted shares to mount
