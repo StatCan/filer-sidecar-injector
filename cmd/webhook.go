@@ -37,10 +37,18 @@ const (
 )
 
 const existingShares = "existing-shares"
+const svmCmName = "filers-list"
 
 type WebhookServer struct {
 	sidecarConfig *Config
 	server        *http.Server
+}
+
+type SvmInfo struct {
+	Vserver string `json:"vserver"`
+	Name    string `json:"name"`
+	Uuid    string `json:"uuid"`
+	Url     string `json:"url"`
 }
 
 // Use for easy adding of values
@@ -208,20 +216,8 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, volumeNam
 }
 
 // createPatch function handles the mutation patch creation
-func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string) ([]byte, error) {
+func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string, clientset *kubernetes.Clientset, svmInfoMap map[string]SvmInfo) ([]byte, error) {
 	var patch []patchOperation
-
-	// Creates the in-cluster config
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		panic(err.Error())
-	}
-
-	// Creates the clientset
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		panic(err.Error())
-	}
 
 	// Retrieves the configmap containing the list of shares. Must loop through this
 	// Format is "filer1": '["share1", "share2"]'
@@ -249,8 +245,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 				" so mounting will be skipped")
 			continue
 		}
-		// TODO update with retrieving the main configmap...
-		// s3Url := string(secret.Data["S3_URL"])
+		s3Url := string(svmInfoMap[svmName].Url)
 		s3Access := string(secret.Data["S3_ACCESS"])
 		s3Secret := string(secret.Data["S3_SECRET"])
 		// Unmarshal to get list of wanted shares to mount
@@ -375,7 +370,7 @@ func hashBucketName(name string) string {
 }
 
 // main mutation process
-func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
+func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview, clientset *kubernetes.Clientset, svmInfoMap map[string]SvmInfo) *admissionv1.AdmissionResponse {
 	req := ar.Request
 	var pod corev1.Pod
 	if err := json.Unmarshal(req.Object.Raw, &pod); err != nil {
@@ -399,7 +394,7 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview) *admissionv1
 	}
 
 	annotations := map[string]string{admissionWebhookAnnotationStatusKey: "injected"}
-	patchBytes, err := createPatch(&pod, whsvr.sidecarConfig, annotations)
+	patchBytes, err := createPatch(&pod, whsvr.sidecarConfig, annotations, clientset, svmInfoMap)
 	if err != nil {
 		return &admissionv1.AdmissionResponse{
 			Result: &metav1.Status{
@@ -421,6 +416,25 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview) *admissionv1
 
 // Serve method for webhook server
 func (whsvr *WebhookServer) serve(w http.ResponseWriter, r *http.Request) {
+	// Creates the in-cluster config
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	// Creates the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	// Retrieve the das main configmap containing information on the svms (filers)
+	// [{vserver: fld5filersvm..., url: https... }, ]
+	svmInfoMap, err := getSvmInfoList(clientset)
+	if err != nil {
+		klog.Fatalf("Error retrieving SVM map: %s", err.Error())
+	}
+
 	var body []byte
 	if r.Body != nil {
 		if data, err := io.ReadAll(r.Body); err == nil {
@@ -451,7 +465,7 @@ func (whsvr *WebhookServer) serve(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 	} else {
-		admissionResponse = whsvr.mutate(&ar)
+		admissionResponse = whsvr.mutate(&ar, clientset, svmInfoMap)
 	}
 
 	admissionReview := admissionv1.AdmissionReview{
@@ -477,4 +491,29 @@ func (whsvr *WebhookServer) serve(w http.ResponseWriter, r *http.Request) {
 		warningLogger.Printf("Can't write response: %v", err)
 		http.Error(w, fmt.Sprintf("could not write response: %v", err), http.StatusInternalServerError)
 	}
+}
+
+func getSvmInfoList(client *kubernetes.Clientset) (map[string]SvmInfo, error) {
+	klog.Infof("Getting filers list...")
+
+	filerListCM, err := client.CoreV1().ConfigMaps("das").Get(context.Background(), "filers-list", metav1.GetOptions{})
+	if err != nil {
+		klog.Errorf("Error occured while getting the filers list: %v", err)
+		return nil, err
+	}
+
+	var svmInfoList []SvmInfo
+	err = json.Unmarshal([]byte(filerListCM.Data["filers"]), &svmInfoList)
+	if err != nil {
+		klog.Errorf("Error occured while unmarshalling the filers list: %v", err)
+		return nil, err
+	}
+
+	//format the data into something a bit more usable
+	filerList := map[string]SvmInfo{}
+	for _, svm := range svmInfoList {
+		filerList[svm.Vserver] = svm
+	}
+
+	return filerList, nil
 }
