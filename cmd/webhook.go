@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/barkimedes/go-deepcopy"
@@ -366,7 +367,7 @@ func limitString(input string, limit int) string {
 func hashBucketName(name string) string {
 	h := fnv.New64a()
 	h.Write([]byte(name))
-	return string(h.Sum64())
+	return strconv.FormatUint(h.Sum64(), 10)
 }
 
 // main mutation process
