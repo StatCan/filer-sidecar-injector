@@ -90,7 +90,11 @@ func loadConfig(configFile string) (*Config, error) {
 }
 
 // Check whether the target resoured need to be mutated
-func mutationRequired(metadata *metav1.ObjectMeta) bool {
+func mutationRequired(metadata *metav1.ObjectMeta, cmExists bool) bool {
+	// If the CM does not exist then we dont enter
+	if cmExists == false {
+		return false
+	}
 	// Pod must have that label to get picked up
 	if _, ok := metadata.Labels["notebook-name"]; !ok {
 		infoLogger.Printf("Skip mutation since not a notebook pod")
@@ -192,7 +196,7 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, volumeNam
 			if targetContainerSpec[key].Env[envVars].Name == "NB_PREFIX" {
 				var mapSlice []M
 				valueA := M{"name": volumeName,
-					"mountPath": "/home/jovyan/filers/" + filerName + bucketMount,
+					"mountPath": "/home/jovyan/filers/" + filerName + "/" + bucketMount,
 					"readOnly":  false, "mountPropagation": "HostToContainer"}
 				mapSlice = append(mapSlice, valueA)
 				if isFirst {
@@ -217,16 +221,10 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, volumeNam
 }
 
 // createPatch function handles the mutation patch creation
-func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string, clientset *kubernetes.Clientset, svmInfoMap map[string]SvmInfo) ([]byte, error) {
+func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string, clientset *kubernetes.Clientset,
+	svmShareList *corev1.ConfigMap, svmInfoMap map[string]SvmInfo) []byte {
 	var patch []patchOperation
 
-	// Retrieves the configmap containing the list of shares. Must loop through this
-	// Format is "filer1": '["share1", "share2"]'
-	svmShareList, errorSvm := clientset.CoreV1().ConfigMaps(pod.Namespace).Get(context.Background(), existingShares, metav1.GetOptions{})
-	if k8serrors.IsNotFound(errorSvm) {
-		klog.Errorf("Configmap not found, but will not error out as user may have not set their shares")
-		return nil, nil
-	}
 	isFirstVol := true
 	// We don't want to overwrite any mounted volumes
 	if len(pod.Spec.Volumes) > 0 {
@@ -373,6 +371,7 @@ func hashBucketName(name string) string {
 
 // main mutation process
 func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview, clientset *kubernetes.Clientset, svmInfoMap map[string]SvmInfo) *admissionv1.AdmissionResponse {
+	cmExists := true
 	req := ar.Request
 	var pod corev1.Pod
 	if err := json.Unmarshal(req.Object.Raw, &pod); err != nil {
@@ -387,8 +386,14 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview, clientset *k
 	infoLogger.Printf("AdmissionReview for Kind=%v, Namespace=%v Name=%v (%v) UID=%v patchOperation=%v UserInfo=%v",
 		req.Kind, req.Namespace, req.Name, pod.Name, req.UID, req.Operation, req.UserInfo)
 
+	// Retrieves the configmap containing the list of shares. Must loop through this
+	// Format is "filer1": '["share1", "share2"]'
+	svmShareList, errorSvm := clientset.CoreV1().ConfigMaps(pod.Namespace).Get(context.Background(), existingShares, metav1.GetOptions{})
+	if k8serrors.IsNotFound(errorSvm) {
+		cmExists = false
+	}
 	// determine whether to perform mutation
-	if !mutationRequired(&pod.ObjectMeta) {
+	if !mutationRequired(&pod.ObjectMeta, cmExists) {
 		infoLogger.Printf("Skipping mutation for %s/%s due to policy check", pod.Namespace, pod.Name)
 		return &admissionv1.AdmissionResponse{
 			Allowed: true,
@@ -396,14 +401,7 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview, clientset *k
 	}
 
 	annotations := map[string]string{admissionWebhookAnnotationStatusKey: "injected"}
-	patchBytes, err := createPatch(&pod, whsvr.sidecarConfig, annotations, clientset, svmInfoMap)
-	if err != nil {
-		return &admissionv1.AdmissionResponse{
-			Result: &metav1.Status{
-				Message: err.Error(),
-			},
-		}
-	}
+	patchBytes := createPatch(&pod, whsvr.sidecarConfig, annotations, clientset, svmShareList, svmInfoMap)
 
 	infoLogger.Printf("AdmissionResponse: patch=%v\n", string(patchBytes))
 	return &admissionv1.AdmissionResponse{
