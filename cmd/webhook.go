@@ -192,7 +192,7 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, volumeNam
 			if targetContainerSpec[key].Env[envVars].Name == "NB_PREFIX" {
 				var mapSlice []M
 				valueA := M{"name": volumeName,
-					"mountPath": "/home/jovyan/filers/" + filerName + bucketMount,
+					"mountPath": "/home/jovyan/filers/" + filerName + "/" + bucketMount,
 					"readOnly":  false, "mountPropagation": "HostToContainer"}
 				mapSlice = append(mapSlice, valueA)
 				if isFirst {
@@ -224,7 +224,8 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	// Format is "filer1": '["share1", "share2"]'
 	svmShareList, errorSvm := clientset.CoreV1().ConfigMaps(pod.Namespace).Get(context.Background(), existingShares, metav1.GetOptions{})
 	if k8serrors.IsNotFound(errorSvm) {
-		return nil, errorSvm
+		klog.Errorf("Configmap not found, but will not error out as user may have not set their shares")
+		return nil, nil
 	}
 	isFirstVol := true
 	// We don't want to overwrite any mounted volumes
