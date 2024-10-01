@@ -192,7 +192,7 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, volumeNam
 			if targetContainerSpec[key].Env[envVars].Name == "NB_PREFIX" {
 				var mapSlice []M
 				valueA := M{"name": volumeName,
-					"mountPath": "/home/jovyan/filers/" + filerName + "/" + bucketMount,
+					"mountPath": "/home/jovyan/filers/" + filerName + bucketMount,
 					"readOnly":  false, "mountPropagation": "HostToContainer"}
 				mapSlice = append(mapSlice, valueA)
 				if isFirst {
