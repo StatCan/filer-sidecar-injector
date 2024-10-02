@@ -5,21 +5,25 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"net/http"
 	"os"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/barkimedes/go-deepcopy"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/klog/v2"
 )
 
 var (
@@ -33,9 +37,19 @@ const (
 	admissionWebhookAnnotationStatusKey = "filer-injector-webhook.das-zone.statcan/status"
 )
 
+const existingShares = "existing-shares"
+const svmCmName = "filers-list"
+
 type WebhookServer struct {
 	sidecarConfig *Config
 	server        *http.Server
+}
+
+type SvmInfo struct {
+	Vserver string `json:"vserver"`
+	Name    string `json:"name"`
+	Uuid    string `json:"uuid"`
+	Url     string `json:"url"`
 }
 
 // Use for easy adding of values
@@ -203,23 +217,9 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, volumeNam
 }
 
 // createPatch function handles the mutation patch creation
-func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string) ([]byte, error) {
+func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string, clientset *kubernetes.Clientset,
+	svmShareList *corev1.ConfigMap, svmInfoMap map[string]SvmInfo) ([]byte, error) {
 	var patch []patchOperation
-
-	// Creates the in-cluster config
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		panic(err.Error())
-	}
-
-	// Creates the clientset
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	// Retrieves the list of secrets
-	secretList, _ := clientset.CoreV1().Secrets(pod.Namespace).List(context.Background(), metav1.ListOptions{})
 
 	isFirstVol := true
 	// We don't want to overwrite any mounted volumes
@@ -229,41 +229,46 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 	filerBucketList := make([]string, 0)
 
-	for _, secret := range secretList.Items {
-		// Check for secrets having filer-conn-secret
-		if strings.Contains(secret.Name, "filer-conn-secret") {
-			// Obtain the name of the filer to further unique mounts and organization
-			filerNameList := strings.Split(secret.Name, "-")
-			filerName := "error" // should not happen
-			if len(filerNameList) > 1 {
-				filerName = filerNameList[0]
-			}
-
+	// shareList.Data is a map[string]string
+	// https://goplay.tools/snippet/zUiIt23ZYVK
+	var shareList []string
+	for svmName := range svmShareList.Data {
+		// Retrieve the associated secret with the svm
+		secret, err := clientset.CoreV1().Secrets(pod.Namespace).Get(context.Background(),
+			svmName+"-conn-secret", metav1.GetOptions{})
+		if k8serrors.IsNotFound(err) {
+			klog.Infof("Error, secret for svm:" + svmName + " was not found for ns:" + pod.Namespace +
+				" so mounting will be skipped")
+			continue
+		}
+		s3Url := string(svmInfoMap[svmName].Url)
+		s3Access := string(secret.Data["S3_ACCESS"])
+		s3Secret := string(secret.Data["S3_SECRET"])
+		// Unmarshal to get list of wanted shares to mount
+		err = json.Unmarshal([]byte(svmShareList.Data[svmName]), &shareList)
+		if err != nil {
+			klog.Infof("Error unmarshalling the share list for svm:" + svmName +
+				" for ns:" + pod.Namespace + " so mounting will be skipped")
+			continue
+		}
+		// iterate through and do the patch
+		for share := range shareList {
 			// Deep copy to avoid changes in original sidecar config
 			tempSidecarConfig, _ := deepcopy.Anything(sidecarConfigTemplate)
 			sidecarConfig := tempSidecarConfig.(*Config)
-
-			// Bucket might be a full path with shares, meaning with slashes (path1/path2)
-			bucketMount := string(secret.Data["S3_BUCKET"])
-
-			// S3_URL, S3_ACCESS, and S3_SECRET are essential
-			s3Url := string(secret.Data["S3_URL"])
-			s3Access := string(secret.Data["S3_ACCESS"])
-			s3Secret := string(secret.Data["S3_SECRET"])
-
+			bucketMount := shareList[share]
 			// Validation: Ensure bucketMount, S3_URL, S3_ACCESS, and S3_SECRET are present and not empty
 			if bucketMount == "" || s3Url == "" || s3Access == "" || s3Secret == "" {
 				warningLogger.Printf("Skipping secret %s in namespace %s: one or more required fields are empty (bucketMount: %s, S3_URL: %s, S3_ACCESS: %s, S3_SECRET: %s)",
 					secret.Name, pod.Namespace, bucketMount, s3Url, s3Access, s3Secret)
 				continue // Skip this secret if any of the necessary values are empty
 			}
-
-			// Setting container name format to <filer>-<bucket>-<deepest dir>
+			// Setting container name format to <svm>-<dir>-<deepest dir>
 			// Limiting the characters for those values to respect the max length (max 63 for container names).
 			bucketDirs := strings.Split(bucketMount, "/")
 
 			// Limit the characters for filer name (max 7 chars) and bucket name (max 5 chars)
-			limitFilerName := limitString(filerName, 7)
+			limitFilerName := limitString(svmName, 7)
 			limitBucketName := limitString(bucketDirs[0], 5)
 			filerBucketName := limitFilerName + "-" + limitBucketName
 
@@ -278,12 +283,11 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 			// Add the unique name to the list
 			filerBucketList = append(filerBucketList, filerBucketName)
-
 			// Configure the sidecar container
 			sidecarConfig.Containers[0].Name = filerBucketName
 			sidecarConfig.Containers[0].Args = []string{"-c", "/goofys --cheap --endpoint " + s3Url +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
-				bucketMount + "/ /tmp; echo sleeping...; sleep infinity"}
+				hashBucketName(bucketMount) + "/ /tmp; echo sleeping...; sleep infinity"}
 
 			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerBucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
 			sidecarConfig.Containers[0].Env[1].Value = s3Access
@@ -302,11 +306,11 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
-			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, filerName, isFirstVol)...)
+			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
 			isFirstVol = false // Update such that no longer the first value
-		}
-	}
 
+		} // end shareList loop
+	} // end loop through user configmap
 	return json.Marshal(patch)
 }
 
@@ -354,8 +358,15 @@ func limitString(input string, limit int) string {
 	return input
 }
 
+// Applies a hash function to the bucketname to make it S3 compliant
+func hashBucketName(name string) string {
+	h := fnv.New64a()
+	h.Write([]byte(name))
+	return strconv.FormatUint(h.Sum64(), 10)
+}
+
 // main mutation process
-func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
+func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview, clientset *kubernetes.Clientset, svmInfoMap map[string]SvmInfo) *admissionv1.AdmissionResponse {
 	req := ar.Request
 	var pod corev1.Pod
 	if err := json.Unmarshal(req.Object.Raw, &pod); err != nil {
@@ -370,8 +381,12 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview) *admissionv1
 	infoLogger.Printf("AdmissionReview for Kind=%v, Namespace=%v Name=%v (%v) UID=%v patchOperation=%v UserInfo=%v",
 		req.Kind, req.Namespace, req.Name, pod.Name, req.UID, req.Operation, req.UserInfo)
 
+	// Retrieves the configmap containing the list of shares. Must loop through this
+	// Format is "filer1": '["share1", "share2"]'
+	svmShareList, errorSvm := clientset.CoreV1().ConfigMaps(pod.Namespace).Get(context.Background(), existingShares, metav1.GetOptions{})
+
 	// determine whether to perform mutation
-	if !mutationRequired(&pod.ObjectMeta) {
+	if k8serrors.IsNotFound(errorSvm) || !mutationRequired(&pod.ObjectMeta) {
 		infoLogger.Printf("Skipping mutation for %s/%s due to policy check", pod.Namespace, pod.Name)
 		return &admissionv1.AdmissionResponse{
 			Allowed: true,
@@ -379,7 +394,7 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview) *admissionv1
 	}
 
 	annotations := map[string]string{admissionWebhookAnnotationStatusKey: "injected"}
-	patchBytes, err := createPatch(&pod, whsvr.sidecarConfig, annotations)
+	patchBytes, err := createPatch(&pod, whsvr.sidecarConfig, annotations, clientset, svmShareList, svmInfoMap)
 	if err != nil {
 		return &admissionv1.AdmissionResponse{
 			Result: &metav1.Status{
@@ -401,6 +416,25 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview) *admissionv1
 
 // Serve method for webhook server
 func (whsvr *WebhookServer) serve(w http.ResponseWriter, r *http.Request) {
+	// Creates the in-cluster config
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	// Creates the clientset
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	// Retrieve the das main configmap containing information on the svms (filers)
+	// [{vserver: fld5filersvm..., url: https... }, ]
+	svmInfoMap, err := getSvmInfoList(clientset)
+	if err != nil {
+		klog.Fatalf("Error retrieving SVM map: %s", err.Error())
+	}
+
 	var body []byte
 	if r.Body != nil {
 		if data, err := io.ReadAll(r.Body); err == nil {
@@ -431,7 +465,7 @@ func (whsvr *WebhookServer) serve(w http.ResponseWriter, r *http.Request) {
 			},
 		}
 	} else {
-		admissionResponse = whsvr.mutate(&ar)
+		admissionResponse = whsvr.mutate(&ar, clientset, svmInfoMap)
 	}
 
 	admissionReview := admissionv1.AdmissionReview{
@@ -457,4 +491,29 @@ func (whsvr *WebhookServer) serve(w http.ResponseWriter, r *http.Request) {
 		warningLogger.Printf("Can't write response: %v", err)
 		http.Error(w, fmt.Sprintf("could not write response: %v", err), http.StatusInternalServerError)
 	}
+}
+
+func getSvmInfoList(client *kubernetes.Clientset) (map[string]SvmInfo, error) {
+	klog.Infof("Getting filers list...")
+
+	filerListCM, err := client.CoreV1().ConfigMaps("das").Get(context.Background(), "filers-list", metav1.GetOptions{})
+	if err != nil {
+		klog.Errorf("Error occured while getting the filers list: %v", err)
+		return nil, err
+	}
+
+	var svmInfoList []SvmInfo
+	err = json.Unmarshal([]byte(filerListCM.Data["filers"]), &svmInfoList)
+	if err != nil {
+		klog.Errorf("Error occured while unmarshalling the filers list: %v", err)
+		return nil, err
+	}
+
+	//format the data into something a bit more usable
+	filerList := map[string]SvmInfo{}
+	for _, svm := range svmInfoList {
+		filerList[svm.Vserver] = svm
+	}
+
+	return filerList, nil
 }
