@@ -90,11 +90,7 @@ func loadConfig(configFile string) (*Config, error) {
 }
 
 // Check whether the target resoured need to be mutated
-func mutationRequired(metadata *metav1.ObjectMeta, cmExists bool) bool {
-	// If the CM does not exist then we dont enter
-	if cmExists == false {
-		return false
-	}
+func mutationRequired(metadata *metav1.ObjectMeta) bool {
 	// Pod must have that label to get picked up
 	if _, ok := metadata.Labels["notebook-name"]; !ok {
 		infoLogger.Printf("Skip mutation since not a notebook pod")
@@ -389,11 +385,9 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview, clientset *k
 	// Retrieves the configmap containing the list of shares. Must loop through this
 	// Format is "filer1": '["share1", "share2"]'
 	svmShareList, errorSvm := clientset.CoreV1().ConfigMaps(pod.Namespace).Get(context.Background(), existingShares, metav1.GetOptions{})
-	if k8serrors.IsNotFound(errorSvm) {
-		cmExists = false
-	}
+
 	// determine whether to perform mutation
-	if !mutationRequired(&pod.ObjectMeta, cmExists) {
+	if k8serrors.IsNotFound(errorSvm) || !mutationRequired(&pod.ObjectMeta) {
 		infoLogger.Printf("Skipping mutation for %s/%s due to policy check", pod.Namespace, pod.Name)
 		return &admissionv1.AdmissionResponse{
 			Allowed: true,
