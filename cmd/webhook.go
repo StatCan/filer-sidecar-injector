@@ -367,7 +367,6 @@ func hashBucketName(name string) string {
 
 // main mutation process
 func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview, clientset *kubernetes.Clientset, svmInfoMap map[string]SvmInfo) *admissionv1.AdmissionResponse {
-	cmExists := true
 	req := ar.Request
 	var pod corev1.Pod
 	if err := json.Unmarshal(req.Object.Raw, &pod); err != nil {
