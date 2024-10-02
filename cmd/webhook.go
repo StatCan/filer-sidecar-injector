@@ -222,7 +222,7 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, volumeNam
 
 // createPatch function handles the mutation patch creation
 func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string, clientset *kubernetes.Clientset,
-	svmShareList *corev1.ConfigMap, svmInfoMap map[string]SvmInfo) []byte {
+	svmShareList *corev1.ConfigMap, svmInfoMap map[string]SvmInfo) ([]byte, error) {
 	var patch []patchOperation
 
 	isFirstVol := true
@@ -401,7 +401,14 @@ func (whsvr *WebhookServer) mutate(ar *admissionv1.AdmissionReview, clientset *k
 	}
 
 	annotations := map[string]string{admissionWebhookAnnotationStatusKey: "injected"}
-	patchBytes := createPatch(&pod, whsvr.sidecarConfig, annotations, clientset, svmShareList, svmInfoMap)
+	patchBytes, err := createPatch(&pod, whsvr.sidecarConfig, annotations, clientset, svmShareList, svmInfoMap)
+	if err != nil {
+		return &admissionv1.AdmissionResponse{
+			Result: &metav1.Status{
+				Message: err.Error(),
+			},
+		}
+	}
 
 	infoLogger.Printf("AdmissionResponse: patch=%v\n", string(patchBytes))
 	return &admissionv1.AdmissionResponse{
