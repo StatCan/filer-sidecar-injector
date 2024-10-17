@@ -227,7 +227,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 		isFirstVol = false
 	}
 
-	filerBucketList := make([]string, 0)
+	// filerBucketList := make([]string, 0)
 
 	// shareList.Data is a map[string]string
 	// https://goplay.tools/snippet/zUiIt23ZYVK
