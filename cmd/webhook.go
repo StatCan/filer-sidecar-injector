@@ -326,6 +326,9 @@ func cleanAndSanitizeName(name string) string {
 	pattern := regexp.MustCompile(`-+`)
 	name = pattern.ReplaceAllString(name, "-")
 
+	// Replace underscores with dashes
+	name = strings.ReplaceAll(name, "_", "-")
+
 	// Remove trailing dashes
 	name = strings.TrimRight(name, "-")
 
