@@ -233,9 +233,10 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	// https://goplay.tools/snippet/zUiIt23ZYVK
 	var shareList []string
 	for svmName := range svmShareList.Data {
+		svmSecretName := strings.Replace(svmName, "_", "-", -1) + "-conn-secret"
 		// Retrieve the associated secret with the svm
 		secret, err := clientset.CoreV1().Secrets(pod.Namespace).Get(context.Background(),
-			svmName+"-conn-secret", metav1.GetOptions{})
+			svmSecretName, metav1.GetOptions{})
 		if k8serrors.IsNotFound(err) {
 			klog.Infof("Error, secret for svm:" + svmName + " was not found for ns:" + pod.Namespace +
 				" so mounting will be skipped")
@@ -263,23 +264,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 					secret.Name, pod.Namespace, bucketMount, s3Url, s3Access, s3Secret)
 				continue // Skip this secret if any of the necessary values are empty
 			}
-			// Setting container name format to <svm>-<dir>-<deepest dir>
-			// Limiting the characters for those values to respect the max length (max 63 for container names).
-			// bucketDirs := strings.Split(bucketMount, "/")
-
-			// // Limit the characters for filer name (max 7 chars) and bucket name (max 5 chars)
-			// limitFilerName := limitString(svmName, 7)
-			// limitBucketName := limitString(bucketDirs[0], 5)
-			// filerBucketName := limitFilerName + "-" + limitBucketName
-
-			// // Append the deepest directory name if available
-			// if len(bucketDirs) >= 2 {
-			// 	limitDeepestDirName := limitString(bucketDirs[len(bucketDirs)-1], 5)
-			// 	filerBucketName = filerBucketName + "-" + limitDeepestDirName
-			// }
-
-			// // Ensure the name is unique by appending an integer if necessary
-			// filerBucketName = cleanAndSanitizeName(ensureUniqueName(filerBucketName, filerBucketList))
 
 			// Add the unique name to the list
 			// filerBucketList = append(filerBucketList, filerBucketName)
