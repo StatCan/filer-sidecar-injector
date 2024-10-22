@@ -233,7 +233,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	// https://goplay.tools/snippet/zUiIt23ZYVK
 	var shareList []string
 	for svmName := range svmShareList.Data {
-		svmSecretName := strings.Replace(svmName, "_", "-", -1) + "-conn-secret"
+		svmSecretName := strings.ReplaceAll(svmName, "_", "-") + "-conn-secret"
 		// Retrieve the associated secret with the svm
 		secret, err := clientset.CoreV1().Secrets(pod.Namespace).Get(context.Background(),
 			svmSecretName, metav1.GetOptions{})
