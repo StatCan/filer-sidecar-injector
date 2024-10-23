@@ -267,7 +267,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 			// Add the unique name to the list
 			// filerBucketList = append(filerBucketList, filerBucketName)
-			initialHashedBucketName := limitString(hashBucketName(bucketMount), 5)
+			initialHashedBucketName := hashBucketName(bucketMount)
 			// Configure the sidecar container
 			sidecarConfig.Containers[0].Args = []string{"-c", "for i in {1..5}; do /goofys --cheap --endpoint " + s3Url +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
