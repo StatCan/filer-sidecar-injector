@@ -267,7 +267,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 			// Add the unique name to the list
 			// filerBucketList = append(filerBucketList, filerBucketName)
-			hashedBucketName := hashBucketName(bucketMount)
+			hashedBucketName := limitString(hashBucketName(bucketMount), 5)
 			filerBucketName := limitString(svmName, 5) + "-" + hashedBucketName
 			// Configure the sidecar container
 			sidecarConfig.Containers[0].Name = filerBucketName
