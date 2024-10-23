@@ -65,10 +65,10 @@ jobs:
         docker image prune
 
     # Scan image for vulnerabilities
-    #- name: Aqua Security Trivy image scan
-    #  run: |
-    #    curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin ${{ env.TRIVY_VERSION }}
-    #    trivy image localhost:5000/filer-sidecar:latest --exit-code 0 --timeout=20m --security-checks vuln --severity CRITICAL
+    - name: Aqua Security Trivy image scan
+      run: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin ${{ env.TRIVY_VERSION }}
+        trivy image localhost:5000/filer-sidecar:latest --exit-code 0 --timeout=20m --security-checks vuln --severity CRITICAL
 
     - name: Push image to registry
       run: |
