@@ -273,6 +273,9 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 				" for ns:" + pod.Namespace + " so mounting will be skipped")
 			continue
 		}
+		// must set ACCESS and SECRET keys in the patch
+		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"-access", s3Access)...)
+		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"-secret", s3Secret)...)
 		// iterate through and do the patch
 		for share := range shareList {
 			// Deep copy to avoid changes in original sidecar config
@@ -315,6 +318,9 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
+			// Add the environment variables
+			// TODO CLEAN BUCKET MOUNT FIRST becaues cant have blah/test share
+			patch = append(patch, updateUserEnvVars(pod.Spec.Containers, bucketMount, hashedBucketName)...)
 			isFirstVol = false // Update such that no longer the first value
 
 		} // end shareList loop
