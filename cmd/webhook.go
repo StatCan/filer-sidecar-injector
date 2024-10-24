@@ -216,6 +216,27 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, volumeNam
 	return patch
 }
 
+// This is to add env variables, this is similar to updateWorkingVolumeMounts
+// except there is no `isFirst` because the container this is patching will always have
+// an environment variable existing, so we need to just _append_
+func updateUserEnvVars(targetContainerSpec []corev1.Container, variableName string, variableValue string) (patch []patchOperation) {
+	// We only want to modify the container with NB_PREFIX in it, because that's the user container
+	for key := range targetContainerSpec {
+		for envVars := range targetContainerSpec[key].Env {
+			if targetContainerSpec[key].Env[envVars].Name == "NB_PREFIX" {
+				valueA := M{"name": variableName, "value": variableValue}
+				// it will never be the first environment variable (NB_prefix will exist)
+				patch = append(patch, patchOperation{
+					Op:    "add",
+					Path:  "/spec/containers/0/env/-",
+					Value: valueA,
+				})
+			}
+		}
+	}
+	return patch
+}
+
 // createPatch function handles the mutation patch creation
 func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string, clientset *kubernetes.Clientset,
 	svmShareList *corev1.ConfigMap, svmInfoMap map[string]SvmInfo) ([]byte, error) {
