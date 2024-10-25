@@ -276,6 +276,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 		// must set ACCESS and SECRET keys in the patch
 		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"-access", s3Access)...)
 		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"-secret", s3Secret)...)
+		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"-url", s3Url)...)
 		// iterate through and do the patch
 		for share := range shareList {
 			// Deep copy to avoid changes in original sidecar config
