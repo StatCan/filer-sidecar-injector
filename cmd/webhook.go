@@ -216,6 +216,27 @@ func updateWorkingVolumeMounts(targetContainerSpec []corev1.Container, volumeNam
 	return patch
 }
 
+// This is to add env variables, this is similar to updateWorkingVolumeMounts
+// except there is no `isFirst` because the container this is patching will always have
+// an environment variable existing, so we need to just _append_
+func updateUserEnvVars(targetContainerSpec []corev1.Container, variableName string, variableValue string) (patch []patchOperation) {
+	// We only want to modify the container with NB_PREFIX in it, because that's the user container
+	for key := range targetContainerSpec {
+		for envVars := range targetContainerSpec[key].Env {
+			if targetContainerSpec[key].Env[envVars].Name == "NB_PREFIX" {
+				valueA := M{"name": variableName, "value": variableValue}
+				// it will never be the first environment variable (NB_prefix will exist)
+				patch = append(patch, patchOperation{
+					Op:    "add",
+					Path:  "/spec/containers/0/env/-",
+					Value: valueA,
+				})
+			}
+		}
+	}
+	return patch
+}
+
 // createPatch function handles the mutation patch creation
 func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string, clientset *kubernetes.Clientset,
 	svmShareList *corev1.ConfigMap, svmInfoMap map[string]SvmInfo) ([]byte, error) {
@@ -252,6 +273,10 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 				" for ns:" + pod.Namespace + " so mounting will be skipped")
 			continue
 		}
+		// must set ACCESS and SECRET keys as well as svm url in the patch
+		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"_access", s3Access)...)
+		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"_secret", s3Secret)...)
+		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"_url", s3Url)...)
 		// iterate through and do the patch
 		for share := range shareList {
 			// Deep copy to avoid changes in original sidecar config
@@ -294,6 +319,8 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
+			// Add the environment variables
+			patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"_"+cleanAndSanitizeName(bucketMount), initialHashedBucketName)...)
 			isFirstVol = false // Update such that no longer the first value
 
 		} // end shareList loop
@@ -301,7 +328,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	return json.Marshal(patch)
 }
 
-// Function to clean and sanitize the name by removing illegal characters
+// Used for variable insertion, as dashes are no good but underscores are
 func cleanAndSanitizeName(name string) string {
 	// Define the allowed regex pattern: lowercase letters, numbers, and dashes
 	validNameRegex := regexp.MustCompile(`[^a-z0-9-]`)
@@ -313,8 +340,8 @@ func cleanAndSanitizeName(name string) string {
 	pattern := regexp.MustCompile(`-+`)
 	name = pattern.ReplaceAllString(name, "-")
 
-	// Replace underscores with dashes
-	name = strings.ReplaceAll(name, "_", "-")
+	// Replace dashes with underscores
+	name = strings.ReplaceAll(name, "-", "_")
 
 	// Remove trailing dashes
 	name = strings.TrimRight(name, "-")
