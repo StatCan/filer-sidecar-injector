@@ -274,9 +274,9 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			continue
 		}
 		// must set ACCESS and SECRET keys as well as svm url in the patch
-		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"-access", s3Access)...)
-		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"-secret", s3Secret)...)
-		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"-url", s3Url)...)
+		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"_access", s3Access)...)
+		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"_secret", s3Secret)...)
+		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"_url", s3Url)...)
 		// iterate through and do the patch
 		for share := range shareList {
 			// Deep copy to avoid changes in original sidecar config
@@ -320,7 +320,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
 			// Add the environment variables
-			patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"-"+cleanAndSanitizeName(bucketMount), hashedBucketName)...)
+			patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"_"+cleanAndSanitizeName(bucketMount), hashedBucketName)...)
 			isFirstVol = false // Update such that no longer the first value
 
 		} // end shareList loop
@@ -328,7 +328,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	return json.Marshal(patch)
 }
 
-// Function to clean and sanitize the name by removing illegal characters
+// Used for variable insertion, as dashes are no good but underscores are
 func cleanAndSanitizeName(name string) string {
 	// Define the allowed regex pattern: lowercase letters, numbers, and dashes
 	validNameRegex := regexp.MustCompile(`[^a-z0-9-]`)
@@ -340,8 +340,8 @@ func cleanAndSanitizeName(name string) string {
 	pattern := regexp.MustCompile(`-+`)
 	name = pattern.ReplaceAllString(name, "-")
 
-	// Replace underscores with dashes
-	name = strings.ReplaceAll(name, "_", "-")
+	// Replace dashes with underscores
+	name = strings.ReplaceAll(name, "-", "_")
 
 	// Remove trailing dashes
 	name = strings.TrimRight(name, "-")
