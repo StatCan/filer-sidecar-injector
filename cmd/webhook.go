@@ -319,7 +319,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
 			// Add the environment variables
-			patch = append(patch, updateUserEnvVars(pod.Spec.Containers, cleanAndSanitizeName(bucketMount), hashedBucketName)...)
+			patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"-"+cleanAndSanitizeName(bucketMount), hashedBucketName)...)
 			isFirstVol = false // Update such that no longer the first value
 
 		} // end shareList loop
