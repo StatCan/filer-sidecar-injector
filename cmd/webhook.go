@@ -74,8 +74,6 @@ type patchOperation struct {
 	Value interface{} `json:"value,omitempty"`
 }
 
-var nonAlphanumericRegex = regexp.MustCompile(`[^\p{L}\p{N} ]+`)
-
 func loadConfig(configFile string) (*Config, error) {
 	data, err := os.ReadFile(configFile)
 	if err != nil {
@@ -321,8 +319,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
 			// Add the environment variables
-			formattedBucket := strings.ReplaceAll(nonAlphanumericRegex.ReplaceAllString(bucketMount, "_"), " ", "")
-			patch = append(patch, updateUserEnvVars(pod.Spec.Containers, formattedBucket, hashedBucketName)...)
+			patch = append(patch, updateUserEnvVars(pod.Spec.Containers, cleanAndSanitizeName(bucketMount), hashedBucketName)...)
 			isFirstVol = false // Update such that no longer the first value
 
 		} // end shareList loop
