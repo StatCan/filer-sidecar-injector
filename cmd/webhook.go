@@ -288,8 +288,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 				continue // Skip this secret if any of the necessary values are empty
 			}
 
-			// Add the unique name to the list
-			// filerBucketList = append(filerBucketList, filerBucketName)
 			hashedBucketName := hashBucketName(bucketMount)
 			// Configure the sidecar container
 			sidecarConfig.Containers[0].Args = []string{"-c", "for i in {1..5}; do /goofys --cheap --endpoint " + s3Url +
