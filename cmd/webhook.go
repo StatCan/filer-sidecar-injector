@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -248,8 +247,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 		isFirstVol = false
 	}
 
-	// filerBucketList := make([]string, 0)
-
 	// shareList.Data is a map[string]string
 	// https://goplay.tools/snippet/zUiIt23ZYVK
 	var shareList []string
@@ -277,6 +274,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"_access", s3Access)...)
 		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"_secret", s3Secret)...)
 		patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"_url", s3Url)...)
+		shortenedNs := limitNs(pod.Namespace)
 		// iterate through and do the patch
 		for share := range shareList {
 			// Deep copy to avoid changes in original sidecar config
@@ -290,27 +288,25 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 				continue // Skip this secret if any of the necessary values are empty
 			}
 
-			// Add the unique name to the list
-			// filerBucketList = append(filerBucketList, filerBucketName)
-			initialHashedBucketName := hashBucketName(bucketMount)
+			hashedBucketName := hashBucketName(bucketMount)
 			// Configure the sidecar container
 			sidecarConfig.Containers[0].Args = []string{"-c", "for i in {1..5}; do /goofys --cheap --endpoint " + s3Url +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
-				initialHashedBucketName + "/ /tmp;echo '---- goofys command failed: trying again'; sleep 1; done;" +
+				hashedBucketName + "/ /tmp;echo '---- goofys command failed: trying again'; sleep 1; done;" +
 				"echo 'goofys command failed 5 times sleeping'; sleep infinity"}
-			hashedBucketName := limitString(initialHashedBucketName, 5)
+
 			filerBucketName := limitString(svmName, 5) + "-" + hashedBucketName
 			sidecarConfig.Containers[0].Name = filerBucketName
-			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerBucketName + "-" + pod.Namespace + "/fuse-csi-ephemeral.sock"
+			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerBucketName + "-" + shortenedNs + "/fuse-csi-ephemeral.sock"
 			sidecarConfig.Containers[0].Env[1].Value = s3Access
 			sidecarConfig.Containers[0].Env[2].Value = s3Secret
 
-			fdPassingvolumeMountName := "fuse-fd-passing-" + filerBucketName + "-" + pod.Namespace
+			fdPassingvolumeMountName := "fuse-fd-passing-" + filerBucketName + "-" + shortenedNs
 			sidecarConfig.Containers[0].VolumeMounts[0].Name = fdPassingvolumeMountName
-			sidecarConfig.Containers[0].VolumeMounts[0].MountPath = "fusermount3-proxy-" + filerBucketName + "-" + pod.Namespace
+			sidecarConfig.Containers[0].VolumeMounts[0].MountPath = "fusermount3-proxy-" + filerBucketName + "-" + shortenedNs
 
 			sidecarConfig.Volumes[0].Name = fdPassingvolumeMountName
-			csiEphemeralVolumeountName := "fuse-csi-ephemeral-" + filerBucketName + "-" + pod.Namespace
+			csiEphemeralVolumeountName := "fuse-csi-ephemeral-" + filerBucketName + "-" + shortenedNs
 			sidecarConfig.Volumes[1].Name = csiEphemeralVolumeountName
 			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = fdPassingvolumeMountName
 
@@ -320,7 +316,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
 			// Add the environment variables
-			patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"_"+cleanAndSanitizeName(bucketMount), initialHashedBucketName)...)
+			patch = append(patch, updateUserEnvVars(pod.Spec.Containers, svmName+"_"+cleanAndSanitizeName(bucketMount), hashedBucketName)...)
 			isFirstVol = false // Update such that no longer the first value
 
 		} // end shareList loop
@@ -353,18 +349,9 @@ func cleanAndSanitizeName(name string) string {
 }
 
 // Function to ensure name uniqueness by appending an integer if the name already exists
-func ensureUniqueName(baseName string, existingNames []string) string {
-	// Check if the name is already in the list of existing names
-	if slices.Contains(existingNames, baseName) {
-		// Append an integer to make the name unique
-		for i := 1; ; i++ {
-			newName := fmt.Sprintf("%s-%d", baseName, i)
-			if !slices.Contains(existingNames, newName) {
-				return newName
-			}
-		}
-	}
-	return baseName
+func limitNs(ns string) string {
+	stringSlice := strings.Split(ns, "-")
+	return limitString(stringSlice[len(stringSlice)-1], 5) + limitString(stringSlice[0], 2)
 }
 
 // Helper function to limit string length
