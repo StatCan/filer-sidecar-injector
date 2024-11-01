@@ -351,7 +351,7 @@ func cleanAndSanitizeName(name string) string {
 // Function to ensure name uniqueness by appending an integer if the name already exists
 func limitNs(ns string) string {
 	stringSlice := strings.Split(ns, "-")
-	return limitString(stringSlice[len(stringSlice)-1], 3) + "-" + limitString(stringSlice[0], 2)
+	return limitString(stringSlice[len(stringSlice)-1], 5) + limitString(stringSlice[0], 2)
 }
 
 // Helper function to limit string length
