@@ -242,12 +242,12 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	svmShareList *corev1.ConfigMap, svmInfoMap map[string]SvmInfo) ([]byte, error) {
 	var patch []patchOperation
 	resourceRequest := map[corev1.ResourceName]resource.Quantity{
-		"ResourceCpu":    resource.MustParse("0.1"),
-		"ResourceMemory": resource.MustParse("0.256Gi"),
+		"cpu":    resource.MustParse("0.1"),
+		"memory": resource.MustParse("0.3Gi"),
 	}
 	resourceLimit := map[corev1.ResourceName]resource.Quantity{
-		"ResourceCpu":    resource.MustParse("1"),
-		"ResourceMemory": resource.MustParse("10Gi"),
+		"cpu":    resource.MustParse("1"),
+		"memory": resource.MustParse("10Gi"),
 	}
 	isFirstVol := true
 	// We don't want to overwrite any mounted volumes
