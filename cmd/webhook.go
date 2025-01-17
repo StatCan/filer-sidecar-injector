@@ -243,7 +243,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	var patch []patchOperation
 	resourceRequest := map[corev1.ResourceName]resource.Quantity{
 		"cpu":    resource.MustParse("0.1"),
-		"memory": resource.MustParse("0.3Gi"),
+		"memory": resource.MustParse("256m"),
 	}
 	resourceLimit := map[corev1.ResourceName]resource.Quantity{
 		"cpu":    resource.MustParse("1"),
