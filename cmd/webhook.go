@@ -17,6 +17,7 @@ import (
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -240,7 +241,14 @@ func updateUserEnvVars(targetContainerSpec []corev1.Container, variableName stri
 func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map[string]string, clientset *kubernetes.Clientset,
 	svmShareList *corev1.ConfigMap, svmInfoMap map[string]SvmInfo) ([]byte, error) {
 	var patch []patchOperation
-
+	resourceRequest := map[corev1.ResourceName]resource.Quantity{
+		"cpu":    resource.MustParse("0.1"),
+		"memory": resource.MustParse("256m"),
+	}
+	resourceLimit := map[corev1.ResourceName]resource.Quantity{
+		"cpu":    resource.MustParse("1"),
+		"memory": resource.MustParse("10Gi"),
+	}
 	isFirstVol := true
 	// We don't want to overwrite any mounted volumes
 	if len(pod.Spec.Volumes) > 0 {
@@ -300,6 +308,8 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerBucketName + "-" + shortenedNs + "/fuse-csi-ephemeral.sock"
 			sidecarConfig.Containers[0].Env[1].Value = s3Access
 			sidecarConfig.Containers[0].Env[2].Value = s3Secret
+			sidecarConfig.Containers[0].Resources.Limits = resourceLimit
+			sidecarConfig.Containers[0].Resources.Requests = resourceRequest
 
 			fdPassingvolumeMountName := "fuse-fd-passing-" + filerBucketName + "-" + shortenedNs
 			sidecarConfig.Containers[0].VolumeMounts[0].Name = fdPassingvolumeMountName
