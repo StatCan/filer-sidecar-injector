@@ -74,11 +74,6 @@ type patchOperation struct {
 	Value interface{} `json:"value,omitempty"`
 }
 
-// ResourceList = {
-// 	ResourceCpu: 50m
-// 	ResourceMemory: 256Mi
-// }
-
 func loadConfig(configFile string) (*Config, error) {
 	data, err := os.ReadFile(configFile)
 	if err != nil {
