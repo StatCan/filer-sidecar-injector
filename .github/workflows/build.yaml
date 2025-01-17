@@ -21,8 +21,8 @@ on:
 env:
   REGISTRY_NAME: k8scc01covidacr
   TRIVY_VERSION: "v0.58.2"
-  TRIVY_DATABASES: '"ghcr.io/aquasecurity/trivy-db:2","public.ecr.aws/aquasecurity/trivy-db"'
-  TRIVY_JAVA_DATABASES: '"ghcr.io/aquasecurity/trivy-java-db:1","public.ecr.aws/aquasecurity/trivy-java-db"'
+  TRIVY_DATABASES: '"ghcr.io/aquasecurity/trivy-db:2"'
+  TRIVY_JAVA_DATABASES: '"ghcr.io/aquasecurity/trivy-java-db:1"'
   TRIVY_MAX_RETRIES: 5
   TRIVY_RETRY_DELAY: 20
   SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
