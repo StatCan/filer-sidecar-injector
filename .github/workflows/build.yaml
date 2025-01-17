@@ -64,7 +64,7 @@ jobs:
           trivy image \
             --db-repository ${{ env.TRIVY_DATABASES }} \
             --java-db-repository ${{ env.TRIVY_JAVA_DATABASES }} \
-            ${{ steps.build-image.outputs.full_image_name }} \
+            localhost:5000/filer-sidecar:${{ github.sha }}  \
             --exit-code 10 --timeout=20m --scanners vuln --severity CRITICAL \
           EXIT_CODE=$?
 
