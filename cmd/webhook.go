@@ -246,7 +246,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 		"memory": resource.MustParse("256m"),
 	}
 	resourceLimit := map[corev1.ResourceName]resource.Quantity{
-		"cpu":    resource.MustParse("0.01"),
+		"cpu":    resource.MustParse("0.25"),
 		"memory": resource.MustParse("10Gi"),
 	}
 	isFirstVol := true
