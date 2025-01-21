@@ -242,11 +242,11 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	svmShareList *corev1.ConfigMap, svmInfoMap map[string]SvmInfo) ([]byte, error) {
 	var patch []patchOperation
 	resourceRequest := map[corev1.ResourceName]resource.Quantity{
-		"cpu":    resource.MustParse("0.001"),
+		"cpu":    resource.MustParse("0.003"),
 		"memory": resource.MustParse("256m"),
 	}
 	resourceLimit := map[corev1.ResourceName]resource.Quantity{
-		"cpu":    resource.MustParse("0.005"),
+		"cpu":    resource.MustParse("0.01"),
 		"memory": resource.MustParse("10Gi"),
 	}
 	isFirstVol := true
