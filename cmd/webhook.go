@@ -336,11 +336,18 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 
 // Used for variable insertion, as dashes are no good but underscores are
 func cleanAndSanitizeName(name string) string {
-	// Define the allowed regex pattern: lowercase letters, numbers, and dashes
-	validNameRegex := regexp.MustCompile(`[^a-z0-9-]`)
+	// Define the allowed regex pattern: Alphanumeric and dashes
+	name = strings.ReplaceAll(name, "/", "-")
+	validNameRegex := regexp.MustCompile(`[^a-zA-Z0-9-]`)
 
 	// Replace any character that does not match the allowed pattern with an empty string
 	name = validNameRegex.ReplaceAllString(name, "")
+
+	// Remove trailing dashes
+	name = strings.TrimRight(name, "-")
+
+	// Remove leading dashes
+	name = strings.TrimLeft(name, "-")
 
 	// Replace double dashes with a single dash
 	pattern := regexp.MustCompile(`-+`)
@@ -348,12 +355,6 @@ func cleanAndSanitizeName(name string) string {
 
 	// Replace dashes with underscores
 	name = strings.ReplaceAll(name, "-", "_")
-
-	// Remove trailing dashes
-	name = strings.TrimRight(name, "-")
-
-	// Remove leading dashes
-	name = strings.TrimLeft(name, "-")
 
 	return name
 }
