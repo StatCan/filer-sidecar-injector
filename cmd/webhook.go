@@ -242,7 +242,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, annotations map
 	svmShareList *corev1.ConfigMap, svmInfoMap map[string]SvmInfo) ([]byte, error) {
 	var patch []patchOperation
 	resourceRequest := map[corev1.ResourceName]resource.Quantity{
-		"cpu":    resource.MustParse("0.003"),
+		"cpu":    resource.MustParse("0.2"),
 		"memory": resource.MustParse("100Mi"),
 	}
 	resourceLimit := map[corev1.ResourceName]resource.Quantity{
