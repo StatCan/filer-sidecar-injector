@@ -159,7 +159,7 @@ func updateAnnotation(target map[string]string) (patch []patchOperation) {
 	if target == nil || target[admissionWebhookAnnotationInjectKey] == "" {
 		patch = append(patch, patchOperation{
 			Op:    "add",
-			Path:  "/metadata/annotations",
+			Path:  "/metadata/annotations/" + admissionWebhookAnnotationInjectKey,
 			Value: "injected",
 		})
 	} else {
