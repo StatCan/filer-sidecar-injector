@@ -297,6 +297,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerBucketName + "-" + shortenedNs + "/fuse-csi-ephemeral.sock"
 			sidecarConfig.Containers[0].Env[1].Value = s3Access
 			sidecarConfig.Containers[0].Env[2].Value = s3Secret
+			sidecarConfig.Containers[0].Env[3].Value = s3Url[8:] // want everything after https://
 			sidecarConfig.Containers[0].Resources.Limits = resourceLimit
 			sidecarConfig.Containers[0].Resources.Requests = resourceRequest
 
