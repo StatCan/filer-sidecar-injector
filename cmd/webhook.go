@@ -288,8 +288,8 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 			hashedBucketName := hashBucketName(bucketMount)
 			// Configure the sidecar container
 			sidecarConfig.Containers[0].Args = []string{"-c", "for i in {1..5}; do /goofys --cheap --endpoint " + s3Url +
-				" --http-timeout 1500s --dir-mode 0777 --stat-cache-ttl 0 --type-cache-ttl 0 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
-				hashedBucketName + "/ /tmp;echo '---- goofys command failed: trying again'; sleep 1; done;" +
+				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
+				hashedBucketName + " /tmp;echo '---- goofys command failed: trying again'; sleep 1; done;" +
 				"echo 'goofys command failed 5 times sleeping'; sleep infinity"}
 
 			filerBucketName := limitString(svmName, 5) + "-" + hashedBucketName
@@ -297,6 +297,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 			sidecarConfig.Containers[0].Env[0].Value = "fusermount3-proxy-" + filerBucketName + "-" + shortenedNs + "/fuse-csi-ephemeral.sock"
 			sidecarConfig.Containers[0].Env[1].Value = s3Access
 			sidecarConfig.Containers[0].Env[2].Value = s3Secret
+			sidecarConfig.Containers[0].Env[3].Value = s3Url[8:] // want everything after https://
 			sidecarConfig.Containers[0].Resources.Limits = resourceLimit
 			sidecarConfig.Containers[0].Resources.Requests = resourceRequest
 

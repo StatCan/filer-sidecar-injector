@@ -42,6 +42,10 @@ data:
                 {
                     "name": "AWS_SECRET_ACCESS_KEY",
                     "value": "INSERT-SECRET"
+                },
+                {
+                    "name": "BUCKET_HOST",
+                    "value": "INSERT-BUCKET-HOST"
                 }
             ]
         }
