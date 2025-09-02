@@ -500,7 +500,7 @@ func (whsvr *WebhookServer) serve(w http.ResponseWriter, r *http.Request) {
 func getSvmInfoList(client *kubernetes.Clientset) (map[string]SvmInfo, error) {
 	klog.Infof("Getting filers list...")
 
-	filerListCM, err := client.CoreV1().ConfigMaps("das").Get(context.Background(), "filers-list", metav1.GetOptions{})
+	filerListCM, err := client.CoreV1().ConfigMaps(os.Getenv("POD_NAMESPACE")).Get(context.Background(), "filers-list", metav1.GetOptions{})
 	if err != nil {
 		klog.Errorf("Error occured while getting the filers list: %v", err)
 		return nil, err
