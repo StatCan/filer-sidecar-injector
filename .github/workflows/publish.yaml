@@ -104,4 +104,7 @@ jobs:
       run: |
         docker pull localhost:5000/filer-sidecar:latest
         docker tag localhost:5000/filer-sidecar:latest ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:${{ github.sha }}
+        docker tag localhost:5000/filer-sidecar:latest ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:latest
         docker push ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:${{ github.sha }}
+        docker push ${{ env.REGISTRY_NAME }}.azurecr.io/filer-sidecar:latest
+
