@@ -323,7 +323,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 			// Add container to initContainers and volume to the patch
 			patch = append(patch, addContainer(pod.Spec.InitContainers, sidecarConfig.Containers, "/spec/initContainers")...)
 			// Add restartPolicy: Always to allow sidecar to terminate when main container completes
-			patch = append(patch, addRestartPolicy("/spec/initContainers")...)
 			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 			patch = append(patch, updateAnnotation(pod.Annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
@@ -333,6 +332,8 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 
 		} // end shareList loop
 	} // end loop through user configmap
+	patch = append(patch, addRestartPolicy("/spec/")...)
+
 	return json.Marshal(patch)
 }
 
