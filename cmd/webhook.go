@@ -332,7 +332,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 
 		} // end shareList loop
 	} // end loop through user configmap
-	patch = append(patch, addRestartPolicy("/spec/")...)
+	patch = append(patch, addRestartPolicy("/spec")...)
 
 	return json.Marshal(patch)
 }
