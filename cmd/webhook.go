@@ -134,16 +134,6 @@ func addContainer(target, added []corev1.Container, basePath string) (patch []pa
 	return patch
 }
 
-// base path should route to ...initContainers
-func addRestartPolicy(basePath string) (patch []patchOperation) {
-	patch = append(patch, patchOperation{
-		Op:    "add",
-		Path:  basePath + "/restartPolicy",
-		Value: "Always",
-	})
-	return patch
-}
-
 func addVolume(target, added []corev1.Volume, basePath string) (patch []patchOperation) {
 	first := len(target) == 0
 	var value interface{}
@@ -257,6 +247,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 	// shareList.Data is a map[string]string
 	// https://goplay.tools/snippet/zUiIt23ZYVK
 	var shareList []string
+	rp := corev1.ContainerRestartPolicyAlways
 	for svmName := range svmShareList.Data {
 		svmSecretName := strings.ReplaceAll(svmName, "_", "-") + "-conn-secret"
 		// Retrieve the associated secret with the svm
@@ -310,6 +301,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 			sidecarConfig.Containers[0].Env[3].Value = s3Url[8:] // want everything after https://
 			sidecarConfig.Containers[0].Resources.Limits = resourceLimit
 			sidecarConfig.Containers[0].Resources.Requests = resourceRequest
+			sidecarConfig.Containers[0].RestartPolicy = &rp
 
 			fdPassingvolumeMountName := "fuse-fd-passing-" + filerBucketName + "-" + shortenedNs
 			sidecarConfig.Containers[0].VolumeMounts[0].Name = fdPassingvolumeMountName
@@ -332,7 +324,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 
 		} // end shareList loop
 	} // end loop through user configmap
-	patch = append(patch, addRestartPolicy("/spec")...)
 
 	return json.Marshal(patch)
 }
