@@ -247,7 +247,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 	// shareList.Data is a map[string]string
 	// https://goplay.tools/snippet/zUiIt23ZYVK
 	var shareList []string
-	rp := corev1.ContainerRestartPolicyAlways
 	for svmName := range svmShareList.Data {
 		svmSecretName := strings.ReplaceAll(svmName, "_", "-") + "-conn-secret"
 		// Retrieve the associated secret with the svm
