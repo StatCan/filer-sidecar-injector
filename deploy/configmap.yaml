@@ -17,6 +17,7 @@ data:
             "name": "filer-connection-x",
             "image": "artifactory.cloud.statcan.ca/das-aaw-docker/mfcp-proxy-goofys-multi-inc:5gb",
             "imagePullPolicy": "IfNotPresent",
+            "restartPolicy": "Always",
             "command": [
                 "/bin/bash"
             ],
