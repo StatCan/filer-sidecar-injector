@@ -301,7 +301,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 			sidecarConfig.Containers[0].Env[3].Value = s3Url[8:] // want everything after https://
 			sidecarConfig.Containers[0].Resources.Limits = resourceLimit
 			sidecarConfig.Containers[0].Resources.Requests = resourceRequest
-			sidecarConfig.Containers[0].RestartPolicy = &rp
 
 			fdPassingvolumeMountName := "fuse-fd-passing-" + filerBucketName + "-" + shortenedNs
 			sidecarConfig.Containers[0].VolumeMounts[0].Name = fdPassingvolumeMountName
