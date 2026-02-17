@@ -113,8 +113,10 @@ func mutationRequired(metadata *metav1.ObjectMeta) bool {
 	return required
 }
 
-func addContainer(target, added []corev1.Container, basePath string) (patch []patchOperation) {
-	first := len(target) == 0
+// addContainerTracked adds containers using a counter to determine if it's the first addition
+// This fixes the bug where multiple loop iterations would overwrite previous additions
+func addContainerTracked(alreadyAdded int, added []corev1.Container, basePath string) (patch []patchOperation) {
+	first := alreadyAdded == 0
 	var value interface{}
 	for _, add := range added {
 		value = add
@@ -134,8 +136,10 @@ func addContainer(target, added []corev1.Container, basePath string) (patch []pa
 	return patch
 }
 
-func addVolume(target, added []corev1.Volume, basePath string) (patch []patchOperation) {
-	first := len(target) == 0
+// addVolumeTracked adds volumes using a counter to determine if it's the first addition
+// This fixes the bug where multiple loop iterations would overwrite previous additions
+func addVolumeTracked(alreadyAdded int, added []corev1.Volume, basePath string) (patch []patchOperation) {
+	first := alreadyAdded == 0
 	var value interface{}
 	for _, add := range added {
 		value = add
@@ -244,6 +248,11 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 		isFirstVol = false
 	}
 
+	// Track how many containers and volumes we've added to the patch
+	// Start with the count of what already exists in the pod
+	containersAdded := len(pod.Spec.InitContainers)
+	volumesAdded := len(pod.Spec.Volumes)
+
 	// shareList.Data is a map[string]string
 	// https://goplay.tools/snippet/zUiIt23ZYVK
 	var shareList []string
@@ -311,9 +320,14 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = fdPassingvolumeMountName
 
 			// Add container to initContainers and volume to the patch
-			patch = append(patch, addContainer(pod.Spec.InitContainers, sidecarConfig.Containers, "/spec/initContainers")...)
-			// Add restartPolicy: Always to allow sidecar to terminate when main container completes
-			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
+			// Pass containersAdded to determine if this is the first container
+			patch = append(patch, addContainerTracked(containersAdded, sidecarConfig.Containers, "/spec/initContainers")...)
+			containersAdded++
+
+			// Add volumes - pass volumesAdded count
+			patch = append(patch, addVolumeTracked(volumesAdded, sidecarConfig.Volumes, "/spec/volumes")...)
+			volumesAdded += 2 // We add 2 volumes per iteration (fuse-fd-passing and fuse-csi-ephemeral)
+
 			patch = append(patch, updateAnnotation(pod.Annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
 			// Add the environment variables
