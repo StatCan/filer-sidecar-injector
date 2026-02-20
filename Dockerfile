@@ -1,5 +1,5 @@
 # Build the sidecar-injector binary
-FROM golang:1.22 AS builder
+FROM golang:1.26 AS builder
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
