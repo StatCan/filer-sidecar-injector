@@ -251,9 +251,17 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 	// Track whether we have already added a container to know the correct path for the patch (first addition is different than subsequent additions)
 	isFirstInitContainer := true
 	// We don't want to overwrite any containers
-	if len(pod.Spec.InitContainers) > 0 {
+	// If the field is missing entirely, create it as an empty array first.
+	if pod.Spec.InitContainers == nil {
+		patch = append(patch, patchOperation{
+			Op:    "add",
+			Path:  "/spec/initContainers",
+			Value: []corev1.Container{},
+		})
+	} else if len(pod.Spec.InitContainers) > 0 {
 		isFirstInitContainer = false
 	}
+
 	// shareList.Data is a map[string]string
 	// https://goplay.tools/snippet/zUiIt23ZYVK
 	var shareList []string

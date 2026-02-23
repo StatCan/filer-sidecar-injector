@@ -12,7 +12,7 @@ metadata:
 data:
   sidecarconfig.json: |
     {
-    "containers": [
+    "initContainers": [
         {
             "name": "filer-connection-x",
             "image": "artifactory.cloud.statcan.ca/das-aaw-docker/mfcp-proxy-goofys-multi-inc:5gb",
