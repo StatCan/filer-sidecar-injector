@@ -258,7 +258,8 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 			Path:  "/spec/initContainers",
 			Value: []corev1.Container{},
 		})
-	} else if len(pod.Spec.InitContainers) > 0 {
+	}
+	if len(pod.Spec.InitContainers) > 0 {
 		isFirstInitContainer = false
 	}
 
