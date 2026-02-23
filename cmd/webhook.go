@@ -116,7 +116,7 @@ func mutationRequired(metadata *metav1.ObjectMeta) bool {
 // addContainerTracked adds containers using a boolean to determine if it's the first addition
 // This fixes the bug where multiple loop iterations would overwrite previous additions
 func addContainerTracked(alreadyAdded bool, added []corev1.Container, basePath string) (patch []patchOperation) {
-	first := alreadyAdded
+	first := !alreadyAdded
 	var value interface{}
 	for _, add := range added {
 		value = add
@@ -139,7 +139,7 @@ func addContainerTracked(alreadyAdded bool, added []corev1.Container, basePath s
 // addVolumeTracked adds volumes using a boolean to determine if it's the first addition
 // This fixes the bug where multiple loop iterations would overwrite previous additions
 func addVolumeTracked(alreadyAdded bool, added []corev1.Volume, basePath string) (patch []patchOperation) {
-	first := alreadyAdded
+	first := !alreadyAdded
 	var value interface{}
 	for _, add := range added {
 		value = add
@@ -248,11 +248,12 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 		isFirstVol = false
 	}
 
-	// Track how many containers and volumes we've added to the patch
-	// Start with the count of what already exists in the pod
-	containersAdded := len(pod.Spec.InitContainers) > 0
-	volumesAdded := len(pod.Spec.Volumes) > 0
-
+	// Track whether we have already added a container to know the correct path for the patch (first addition is different than subsequent additions)
+	isFirstContainer := true
+	// We don't want to overwrite any containers
+	if len(pod.Spec.Containers) > 0 {
+		isFirstContainer = false
+	}
 	// shareList.Data is a map[string]string
 	// https://goplay.tools/snippet/zUiIt23ZYVK
 	var shareList []string
@@ -319,11 +320,10 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 
 			// Add container to initContainers and volume to the patch
 			// Pass bools to track first addition and handle path change
-			patch = append(patch, addContainerTracked(containersAdded, sidecarConfig.Containers, "/spec/initContainers")...)
-			containersAdded = true
+			patch = append(patch, addContainerTracked(isFirstContainer, sidecarConfig.Containers, "/spec/initContainers")...)
+			isFirstContainer = false
 
-			patch = append(patch, addVolumeTracked(volumesAdded, sidecarConfig.Volumes, "/spec/volumes")...)
-			volumesAdded = true
+			patch = append(patch, addVolumeTracked(isFirstVol, sidecarConfig.Volumes, "/spec/volumes")...)
 
 			patch = append(patch, updateAnnotation(pod.Annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
