@@ -115,22 +115,12 @@ func mutationRequired(metadata *metav1.ObjectMeta) bool {
 
 // addContainerTracked adds containers using a boolean to determine if it's the first addition
 // This fixes the bug where multiple loop iterations would overwrite previous additions
-func addContainerTracked(isFirst bool, added []corev1.Container, basePath string) (patch []patchOperation) {
-	first := isFirst
-	var value interface{}
+func addContainerTracked(added []corev1.Container, basePath string) (patch []patchOperation) {
 	for _, add := range added {
-		value = add
-		path := basePath
-		if first {
-			first = false
-			value = []corev1.Container{add}
-		} else {
-			path = path + "/-"
-		}
 		patch = append(patch, patchOperation{
 			Op:    "add",
-			Path:  path,
-			Value: value,
+			Path:  basePath + "/-",
+			Value: add,
 		})
 	}
 	return patch
@@ -253,14 +243,12 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 	// We don't want to overwrite any containers
 	// If the field is missing entirely, create it as an empty array first.
 	if pod.Spec.InitContainers == nil {
+		klog.Infof("Patch appended")
 		patch = append(patch, patchOperation{
 			Op:    "add",
 			Path:  "/spec/initContainers",
 			Value: []corev1.Container{},
 		})
-	}
-	if len(pod.Spec.InitContainers) > 0 {
-		isFirstInitContainer = false
 	}
 
 	// shareList.Data is a map[string]string
@@ -329,8 +317,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 
 			// Add container to initContainers and volume to the patch
 			// Pass bools to track first addition and handle path change
-			patch = append(patch, addContainerTracked(isFirstInitContainer, sidecarConfig.Containers, "/spec/initContainers")...)
-			isFirstInitContainer = false
+			patch = append(patch, addContainerTracked(sidecarConfig.Containers, "/spec/initContainers")...)
 
 			patch = append(patch, addVolumeTracked(isFirstVol, sidecarConfig.Volumes, "/spec/volumes")...)
 
