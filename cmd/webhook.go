@@ -115,8 +115,8 @@ func mutationRequired(metadata *metav1.ObjectMeta) bool {
 
 // addContainerTracked adds containers using a boolean to determine if it's the first addition
 // This fixes the bug where multiple loop iterations would overwrite previous additions
-func addContainerTracked(alreadyAdded bool, added []corev1.Container, basePath string) (patch []patchOperation) {
-	first := !alreadyAdded
+func addContainerTracked(isFirst bool, added []corev1.Container, basePath string) (patch []patchOperation) {
+	first := isFirst
 	var value interface{}
 	for _, add := range added {
 		value = add
@@ -138,8 +138,8 @@ func addContainerTracked(alreadyAdded bool, added []corev1.Container, basePath s
 
 // addVolumeTracked adds volumes using a boolean to determine if it's the first addition
 // This fixes the bug where multiple loop iterations would overwrite previous additions
-func addVolumeTracked(alreadyAdded bool, added []corev1.Volume, basePath string) (patch []patchOperation) {
-	first := !alreadyAdded
+func addVolumeTracked(isFirst bool, added []corev1.Volume, basePath string) (patch []patchOperation) {
+	first := isFirst
 	var value interface{}
 	for _, add := range added {
 		value = add
