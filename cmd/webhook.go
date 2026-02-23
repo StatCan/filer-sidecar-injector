@@ -117,6 +117,7 @@ func mutationRequired(metadata *metav1.ObjectMeta) bool {
 // This fixes the bug where multiple loop iterations would overwrite previous additions
 func addContainerTracked(added []corev1.Container, basePath string) (patch []patchOperation) {
 	for _, add := range added {
+		klog.Infof("container patch with name: %s", add.Name)
 		patch = append(patch, patchOperation{
 			Op:    "add",
 			Path:  basePath + "/-",
@@ -239,7 +240,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 	}
 
 	// Track whether we have already added a container to know the correct path for the patch (first addition is different than subsequent additions)
-	isFirstInitContainer := true
 	// We don't want to overwrite any containers
 	// If the field is missing entirely, create it as an empty array first.
 	if pod.Spec.InitContainers == nil {
