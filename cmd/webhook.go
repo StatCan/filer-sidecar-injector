@@ -113,10 +113,10 @@ func mutationRequired(metadata *metav1.ObjectMeta) bool {
 	return required
 }
 
-// addContainerTracked adds containers using a counter to determine if it's the first addition
+// addContainerTracked adds containers using a boolean to determine if it's the first addition
 // This fixes the bug where multiple loop iterations would overwrite previous additions
-func addContainerTracked(alreadyAdded int, added []corev1.Container, basePath string) (patch []patchOperation) {
-	first := alreadyAdded == 0
+func addContainerTracked(alreadyAdded bool, added []corev1.Container, basePath string) (patch []patchOperation) {
+	first := alreadyAdded
 	var value interface{}
 	for _, add := range added {
 		value = add
@@ -136,10 +136,10 @@ func addContainerTracked(alreadyAdded int, added []corev1.Container, basePath st
 	return patch
 }
 
-// addVolumeTracked adds volumes using a counter to determine if it's the first addition
+// addVolumeTracked adds volumes using a boolean to determine if it's the first addition
 // This fixes the bug where multiple loop iterations would overwrite previous additions
-func addVolumeTracked(alreadyAdded int, added []corev1.Volume, basePath string) (patch []patchOperation) {
-	first := alreadyAdded == 0
+func addVolumeTracked(alreadyAdded bool, added []corev1.Volume, basePath string) (patch []patchOperation) {
+	first := alreadyAdded
 	var value interface{}
 	for _, add := range added {
 		value = add
@@ -250,8 +250,8 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 
 	// Track how many containers and volumes we've added to the patch
 	// Start with the count of what already exists in the pod
-	containersAdded := len(pod.Spec.InitContainers)
-	volumesAdded := len(pod.Spec.Volumes)
+	containersAdded := len(pod.Spec.InitContainers) > 0
+	volumesAdded := len(pod.Spec.Volumes) > 0
 
 	// shareList.Data is a map[string]string
 	// https://goplay.tools/snippet/zUiIt23ZYVK
@@ -262,8 +262,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 		secret, err := clientset.CoreV1().Secrets(pod.Namespace).Get(context.Background(),
 			svmSecretName, metav1.GetOptions{})
 		if k8serrors.IsNotFound(err) {
-			klog.Infof("Error, secret for svm:" + svmName + " was not found for ns:" + pod.Namespace +
-				" so mounting will be skipped")
+			klog.Infof("Error, secret for svm: %s was not found for ns: %s so mounting will be skipped", svmName, pod.Namespace)
 			continue
 		}
 		s3Url := string(svmInfoMap[svmName].Url)
@@ -272,8 +271,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 		// Unmarshal to get list of wanted shares to mount
 		err = json.Unmarshal([]byte(svmShareList.Data[svmName]), &shareList)
 		if err != nil {
-			klog.Infof("Error unmarshalling the share list for svm:" + svmName +
-				" for ns:" + pod.Namespace + " so mounting will be skipped")
+			klog.Infof("Error unmarshalling the share list for svm: %s for ns: %s so mounting will be skipped", svmName, pod.Namespace)
 			continue
 		}
 		// must set ACCESS and SECRET keys as well as svm url in the patch
@@ -320,13 +318,12 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = fdPassingvolumeMountName
 
 			// Add container to initContainers and volume to the patch
-			// Pass containersAdded to determine if this is the first container
+			// Pass bools to track first addition and handle path change
 			patch = append(patch, addContainerTracked(containersAdded, sidecarConfig.Containers, "/spec/initContainers")...)
-			containersAdded++
+			containersAdded = true
 
-			// Add volumes - pass volumesAdded count
 			patch = append(patch, addVolumeTracked(volumesAdded, sidecarConfig.Volumes, "/spec/volumes")...)
-			volumesAdded += 2 // We add 2 volumes per iteration (fuse-fd-passing and fuse-csi-ephemeral)
+			volumesAdded = true
 
 			patch = append(patch, updateAnnotation(pod.Annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
