@@ -249,10 +249,10 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 	}
 
 	// Track whether we have already added a container to know the correct path for the patch (first addition is different than subsequent additions)
-	isFirstContainer := true
+	isFirstInitContainer := true
 	// We don't want to overwrite any containers
-	if len(pod.Spec.Containers) > 0 {
-		isFirstContainer = false
+	if len(pod.Spec.InitContainers) > 0 {
+		isFirstInitContainer = false
 	}
 	// shareList.Data is a map[string]string
 	// https://goplay.tools/snippet/zUiIt23ZYVK
@@ -320,8 +320,8 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 
 			// Add container to initContainers and volume to the patch
 			// Pass bools to track first addition and handle path change
-			patch = append(patch, addContainerTracked(isFirstContainer, sidecarConfig.Containers, "/spec/initContainers")...)
-			isFirstContainer = false
+			patch = append(patch, addContainerTracked(isFirstInitContainer, sidecarConfig.Containers, "/spec/initContainers")...)
+			isFirstInitContainer = false
 
 			patch = append(patch, addVolumeTracked(isFirstVol, sidecarConfig.Volumes, "/spec/volumes")...)
 
