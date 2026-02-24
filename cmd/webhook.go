@@ -128,8 +128,8 @@ func addContainer(added []corev1.Container, basePath string) (patch []patchOpera
 
 // addVolumeTracked adds volumes using a boolean to determine if it's the first addition
 // This fixes the bug where multiple loop iterations would overwrite previous additions
-func addVolumeTracked(isFirst bool, added []corev1.Volume, basePath string) (patch []patchOperation) {
-	first := isFirst
+func addVolumeTracked(target, added []corev1.Volume, basePath string) (patch []patchOperation) {
+	first := len(target) == 0
 	var value interface{}
 	for _, add := range added {
 		value = add
@@ -319,7 +319,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 			// Pass bools to track first addition and handle path change
 			patch = append(patch, addContainer(sidecarConfig.Containers, "/spec/initContainers")...)
 
-			patch = append(patch, addVolumeTracked(isFirstVol, sidecarConfig.Volumes, "/spec/volumes")...)
+			patch = append(patch, addVolumeTracked(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 
 			patch = append(patch, updateAnnotation(pod.Annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
