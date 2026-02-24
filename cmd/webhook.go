@@ -113,28 +113,22 @@ func mutationRequired(metadata *metav1.ObjectMeta) bool {
 	return required
 }
 
-func addContainer(target, added []corev1.Container, basePath string) (patch []patchOperation) {
-	first := len(target) == 0
-	var value interface{}
+// addContainers simply never add to an empty initContainers array
+func addContainer(added []corev1.Container, basePath string) (patch []patchOperation) {
 	for _, add := range added {
-		value = add
-		path := basePath
-		if first {
-			first = false
-			value = []corev1.Container{add}
-		} else {
-			path = path + "/-"
-		}
+		klog.Infof("container patch with name: %s", add.Name)
 		patch = append(patch, patchOperation{
 			Op:    "add",
-			Path:  path,
-			Value: value,
+			Path:  basePath + "/-",
+			Value: add,
 		})
 	}
 	return patch
 }
 
-func addVolume(target, added []corev1.Volume, basePath string) (patch []patchOperation) {
+// addVolumeTracked adds volumes using a boolean to determine if it's the first addition
+// This fixes the bug where multiple loop iterations would overwrite previous additions
+func addVolumeTracked(target, added []corev1.Volume, basePath string) (patch []patchOperation) {
 	first := len(target) == 0
 	var value interface{}
 	for _, add := range added {
@@ -244,6 +238,19 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 		isFirstVol = false
 	}
 
+	// We don't want to overwrite any containers
+	// We always want to append, so no need to change the isFirst for this one,
+	// but we do want to check if initContainers exists first because if it doesn't then we need to add it before we can append to it
+	// If the field is missing entirely, create it as an empty array first.
+	if pod.Spec.InitContainers == nil {
+		klog.Infof("Patch appended")
+		patch = append(patch, patchOperation{
+			Op:    "add",
+			Path:  "/spec/initContainers",
+			Value: []corev1.Container{},
+		})
+	}
+
 	// shareList.Data is a map[string]string
 	// https://goplay.tools/snippet/zUiIt23ZYVK
 	var shareList []string
@@ -253,8 +260,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 		secret, err := clientset.CoreV1().Secrets(pod.Namespace).Get(context.Background(),
 			svmSecretName, metav1.GetOptions{})
 		if k8serrors.IsNotFound(err) {
-			klog.Infof("Error, secret for svm:" + svmName + " was not found for ns:" + pod.Namespace +
-				" so mounting will be skipped")
+			klog.Infof("Error, secret for svm: %s was not found for ns: %s so mounting will be skipped", svmName, pod.Namespace)
 			continue
 		}
 		s3Url := string(svmInfoMap[svmName].Url)
@@ -263,8 +269,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 		// Unmarshal to get list of wanted shares to mount
 		err = json.Unmarshal([]byte(svmShareList.Data[svmName]), &shareList)
 		if err != nil {
-			klog.Infof("Error unmarshalling the share list for svm:" + svmName +
-				" for ns:" + pod.Namespace + " so mounting will be skipped")
+			klog.Infof("Error unmarshalling the share list for svm: %s for ns: %s so mounting will be skipped", svmName, pod.Namespace)
 			continue
 		}
 		// must set ACCESS and SECRET keys as well as svm url in the patch
@@ -311,9 +316,11 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 			sidecarConfig.Volumes[1].CSI.VolumeAttributes["fdPassingEmptyDirName"] = fdPassingvolumeMountName
 
 			// Add container to initContainers and volume to the patch
-			patch = append(patch, addContainer(pod.Spec.InitContainers, sidecarConfig.Containers, "/spec/initContainers")...)
-			// Add restartPolicy: Always to allow sidecar to terminate when main container completes
-			patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
+			// Pass bools to track first addition and handle path change
+			patch = append(patch, addContainer(sidecarConfig.Containers, "/spec/initContainers")...)
+
+			patch = append(patch, addVolumeTracked(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
+
 			patch = append(patch, updateAnnotation(pod.Annotations)...)
 			patch = append(patch, updateWorkingVolumeMounts(pod.Spec.Containers, csiEphemeralVolumeountName, bucketMount, svmName, isFirstVol)...)
 			// Add the environment variables
