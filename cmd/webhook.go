@@ -317,6 +317,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 
 			// Add container to initContainers and volume to the patch
 			// Pass bools to track first addition and handle path change
+			infoLogger.Printf("DEBUG: containers=%v\n", sidecarConfig.Containers)
 			patch = append(patch, addContainer(sidecarConfig.Containers, "/spec/initContainers")...)
 
 			patch = append(patch, addVolumeTracked(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
