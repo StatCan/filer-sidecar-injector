@@ -295,7 +295,7 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 			sidecarConfig.Containers[0].Args = []string{"-c", "while true; do /goofys --cheap --endpoint " + s3Url +
 				" --http-timeout 1500s --dir-mode 0777 --file-mode 0777  --debug_fuse --debug_s3 -o allow_other -f " +
 				hashedBucketName + " /tmp;echo '---- goofys command failed: trying again'; sleep 1; done;" +
-				"echo 'goofys command failed 5 times sleeping'; sleep infinity"}
+				"echo 'goofys command failed too many times; Proceeding to sleep'; sleep infinity"}
 
 			filerBucketName := limitString(svmName, 5) + "-" + hashedBucketName
 			sidecarConfig.Containers[0].Name = filerBucketName
@@ -317,7 +317,6 @@ func createPatch(pod *corev1.Pod, sidecarConfigTemplate *Config, clientset *kube
 
 			// Add container to initContainers and volume to the patch
 			// Pass bools to track first addition and handle path change
-			infoLogger.Printf("DEBUG: containers=%v\n", sidecarConfig.Containers)
 			patch = append(patch, addContainer(sidecarConfig.Containers, "/spec/initContainers")...)
 
 			patch = append(patch, addVolumeTracked(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
